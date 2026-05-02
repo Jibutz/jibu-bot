@@ -7,14 +7,14 @@ const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-const { airtable, getStudentByPhone, createStudent, updateStudent, getAllActiveStudents } = require('./src/airtable');
-const { sendWhatsApp } = require('./src/whatsapp');
-const { sendSMS } = require('./src/sms');
-const { createPaymentLink, verifyPayment } = require('./src/payments');
-const { generateQuestion, generateFeedback, generateParentReport } = require('./src/claude');
-const { getRankTitle, checkMilestone, getMilestoneMessage } = require('./src/ranks');
-const { enrollmentFlow } = require('./src/enrollment');
-const { handleNectaResults } = require('./src/necta');
+const { airtable, getStudentByPhone, createStudent, updateStudent, getAllActiveStudents } = require('./airtable');
+const { sendWhatsApp } = require('./whatsapp');
+const { sendSMS } = require('./sms');
+const { createPaymentLink, verifyPayment } = require('./payments');
+const { generateQuestion, generateFeedback, generateParentReport } = require('./claude');
+const { getRankTitle, checkMilestone, getMilestoneMessage } = require('./ranks');
+const { enrollmentFlow } = require('./enrollment');
+const { handleNectaResults } = require('./necta');
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
