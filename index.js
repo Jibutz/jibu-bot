@@ -32,24 +32,58 @@ app.get('/webhook/whatsapp', (req, res) => {
   } else {
     res.sendStatus(403);
   }
-});
-// ─── WhatsApp Webhook (360dialog) ────────────────────────────────────────────
+// —— WhatsApp Webhook (Meta Cloud API)
 app.post('/webhook/whatsapp', async (req, res) => {
-  res.sendStatus(200); // Acknowledge immediately
+  res.sendStatus(200);
   try {
     const body = req.body;
-    if (!body?.messages?.length) return;
+    const entry = body?.entry?.[0];
+    const changes = entry?.changes?.[0];
+    const value = changes?.value;
+    const messages = value?.messages;
 
-    for (const message of body.messages) {
+    if (!messages?.length) return;
+
+    for (const message of messages) {
       const phone = message.from;
       const text = (message.text?.body || '').trim().toUpperCase();
 
-      // NECTA results lookup
       if (text.startsWith('JIBU MATOKEO')) {
         await handleNectaResults(phone, text, 'whatsapp');
         continue;
       }
 
+      const student = await getStudentByPhone(phone);
+
+      if (!student) {
+        await enrollmentFlow(phone, text, 'whatsapp');
+        continue;
+      }
+
+      const validAnswers = ['A', 'B', 'C', 'D'];
+      if (validAnswers.includes(text) && student.Todays_Correct_Answer) {
+        const isCorrect = text === student.Todays_Correct_Answer;
+        const feedback = await generateFeedback(student, text, isCorrect);
+        const newStreak = isCorrect ? (student.Current_Streak || 0) + 1 : (student.Current_Streak || 0);
+        const newPoints = isCorrect ? (student.Total_Points || 0) + 10 : (student.Total_Points || 0);
+        const rankTitle = getRankTitle(newStreak);
+        await updateStudent(student.id, {
+          Current_Streak: newStreak,
+          Longest_Streak: Math.max(newStreak, student.Longest_Streak || 0),
+          Total_Points: newPoints,
+          Last_Answer_Date: new Date().toISOString().split('T')[0],
+          Rank_Title: rankTitle
+        });
+        await sendWhatsApp(phone, feedback);
+      } else {
+        const question = await generateQuestion(student);
+        await sendWhatsApp(phone, question);
+      }
+    }
+  } catch (error) {
+    console.error('Webhook error:', error);
+  }
+});
       const student = await getStudentByPhone(phone);
 
       if (!student) {
