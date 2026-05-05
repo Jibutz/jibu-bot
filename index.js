@@ -32,6 +32,7 @@ app.get('/webhook/whatsapp', (req, res) => {
   } else {
     res.sendStatus(403);
   }
+});
 // —— WhatsApp Webhook (Meta Cloud API)
 app.post('/webhook/whatsapp', async (req, res) => {
   res.sendStatus(200);
@@ -82,32 +83,6 @@ app.post('/webhook/whatsapp', async (req, res) => {
     }
   } catch (error) {
     console.error('Webhook error:', error);
-  }
-});
-      const student = await getStudentByPhone(phone);
-
-      if (!student) {
-        await enrollmentFlow(phone, text, null, 'whatsapp');
-        continue;
-      }
-
-      // Answer processing (A, B, C, D)
-      if (['A', 'B', 'C', 'D'].includes(text)) {
-        await processAnswer(student, text, phone, 'whatsapp');
-        continue;
-      }
-
-      // Enrollment continuation
-      if (student.Status === 'Enrolling') {
-        await enrollmentFlow(phone, text, student, 'whatsapp');
-        continue;
-      }
-
-      // Default fallback
-      await sendWhatsApp(phone, `Karibu JIBU! 📚 Jibu kwa A, B, C au D baada ya kupata swali. Kwa msaada tuma "HELP".`);
-    }
-  } catch (err) {
-    console.error('WhatsApp webhook error:', err);
   }
 });
 
