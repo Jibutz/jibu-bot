@@ -22,7 +22,17 @@ const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 app.get('/', (req, res) => {
   res.json({ status: 'JIBU bot is running 🎓', time: new Date().toISOString() });
 });
-
+// — WhatsApp Webhook Verification
+app.get('/webhook/whatsapp', (req, res) => {
+  const mode = req.query['hub.mode'];
+  const token = req.query['hub.verify_token'];
+  const challenge = req.query['hub.challenge'];
+  if (mode === 'subscribe' && token === process.env.WEBHOOK_VERIFY_TOKEN) {
+    res.status(200).send(challenge);
+  } else {
+    res.sendStatus(403);
+  }
+});
 // ─── WhatsApp Webhook (360dialog) ────────────────────────────────────────────
 app.post('/webhook/whatsapp', async (req, res) => {
   res.sendStatus(200); // Acknowledge immediately
