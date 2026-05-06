@@ -27,7 +27,7 @@ async function sendWhatsApp(to, message) {
     console.log(`✅ WhatsApp sent to ${phone}`);
     return response.data;
   } catch (err) {
-    console.error(`❌ WhatsApp send error to ${phone}:`, err.response?.data || err.message);
+    JSON.stringify(err.response?.data) || err.message
     throw err;
   }
 }
