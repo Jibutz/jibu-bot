@@ -1,17 +1,17 @@
 const axios = require('axios');
 
-const DIALOG360_BASE = 'https://waba.360dialog.io/v1';
+const META_BASE = 'https://graph.facebook.com/v19.0';
 
 /**
- * Send a WhatsApp text message via 360dialog
+ * Send a WhatsApp text message via Meta directly
  */
 async function sendWhatsApp(to, message) {
   const phone = to.replace(/^\+/, '').trim();
-
   try {
     const response = await axios.post(
-      `${DIALOG360_BASE}/messages`,
+      `${META_BASE}/${process.env.WHATSAPP_PHONE_ID}/messages`,
       {
+        messaging_product: 'whatsapp',
         recipient_type: 'individual',
         to: phone,
         type: 'text',
@@ -19,7 +19,7 @@ async function sendWhatsApp(to, message) {
       },
       {
         headers: {
-          'D360-API-KEY': process.env.DIALOG360_API_KEY,
+          'Authorization': `Bearer ${process.env.WHATSAPP_TOKEN}`,
           'Content-Type': 'application/json',
         },
       }
@@ -33,28 +33,27 @@ async function sendWhatsApp(to, message) {
 }
 
 /**
- * Send a WhatsApp template message (for session-independent messages)
+ * Send a WhatsApp template message
  */
 async function sendWhatsAppTemplate(to, templateName, components = []) {
   const phone = to.replace(/^\+/, '').trim();
-
   try {
     const response = await axios.post(
-      `${DIALOG360_BASE}/messages`,
+      `${META_BASE}/${process.env.WHATSAPP_PHONE_ID}/messages`,
       {
+        messaging_product: 'whatsapp',
         recipient_type: 'individual',
         to: phone,
         type: 'template',
         template: {
-          namespace: process.env.WHATSAPP_NAMESPACE || '',
           name: templateName,
-          language: { policy: 'deterministic', code: 'sw' },
+          language: { code: 'sw' },
           components,
         },
       },
       {
         headers: {
-          'D360-API-KEY': process.env.DIALOG360_API_KEY,
+          'Authorization': `Bearer ${process.env.WHATSAPP_TOKEN}`,
           'Content-Type': 'application/json',
         },
       }
