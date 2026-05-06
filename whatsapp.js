@@ -2,9 +2,6 @@ const axios = require('axios');
 
 const META_BASE = 'https://graph.facebook.com/v19.0';
 
-/**
- * Send a WhatsApp text message via Meta directly
- */
 async function sendWhatsApp(to, message) {
   const phone = to.replace(/^\+/, '').trim();
   try {
@@ -27,14 +24,12 @@ async function sendWhatsApp(to, message) {
     console.log(`✅ WhatsApp sent to ${phone}`);
     return response.data;
   } catch (err) {
-    JSON.stringify(err.response?.data) || err.message
+    const errorDetail = JSON.stringify(err.response?.data);
+    console.error(`❌ WhatsApp error: ${errorDetail}`);
     throw err;
   }
 }
 
-/**
- * Send a WhatsApp template message
- */
 async function sendWhatsAppTemplate(to, templateName, components = []) {
   const phone = to.replace(/^\+/, '').trim();
   try {
@@ -60,7 +55,8 @@ async function sendWhatsAppTemplate(to, templateName, components = []) {
     );
     return response.data;
   } catch (err) {
-    console.error(`WhatsApp template error to ${phone}:`, err.response?.data || err.message);
+    const errorDetail = JSON.stringify(err.response?.data);
+    console.error(`❌ WhatsApp template error: ${errorDetail}`);
     throw err;
   }
 }
