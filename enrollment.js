@@ -37,6 +37,11 @@ async function enrollmentFlow(phone, message, student, channel) {
 
   const step = parseInt(student.Enrollment_Step) || 1;
 
+  if (!student.id) {
+    await send(phone, `Samahani, kuna tatizo. Tuma ujumbe tena. / Sorry, please text again.`);
+    return;
+  }
+
   switch (step) {
     case 1: {
       // Received: child's name
