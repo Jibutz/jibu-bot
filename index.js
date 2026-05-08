@@ -22,17 +22,15 @@ const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 app.get('/', (req, res) => {
   res.json({ status: 'JIBU bot is running 🎓', time: new Date().toISOString() });
 });
-<<<<<<< HEAD
 
 // ─── WhatsApp Webhook Verification (Meta Cloud API) ──────────────────────────
-=======
 // — WhatsApp Webhook Verification
->>>>>>> 19be898bc5861f922a57882ba0af3f25d0f0787f
+
 app.get('/webhook/whatsapp', (req, res) => {
   const mode = req.query['hub.mode'];
   const token = req.query['hub.verify_token'];
   const challenge = req.query['hub.challenge'];
-<<<<<<< HEAD
+
 
   if (mode === 'subscribe' && token === process.env.WHATSAPP_VERIFY_TOKEN) {
     console.log('✅ WhatsApp webhook verified');
@@ -57,7 +55,6 @@ app.post('/webhook/whatsapp', async (req, res) => {
       const text = (message.text?.body || '').trim().toUpperCase();
 
       // NECTA results lookup
-=======
   if (mode === 'subscribe' && token === process.env.WEBHOOK_VERIFY_TOKEN) {
     res.status(200).send(challenge);
   } else {
@@ -80,7 +77,7 @@ app.post('/webhook/whatsapp', async (req, res) => {
       const phone = message.from;
       const text = (message.text?.body || '').trim().toUpperCase();
 
->>>>>>> 19be898bc5861f922a57882ba0af3f25d0f0787f
+
       if (text.startsWith('JIBU MATOKEO')) {
         await handleNectaResults(phone, text, 'whatsapp');
         continue;
@@ -89,7 +86,7 @@ app.post('/webhook/whatsapp', async (req, res) => {
       const student = await getStudentByPhone(phone);
 
       if (!student) {
-<<<<<<< HEAD
+
         await enrollmentFlow(phone, text, null, 'whatsapp');
         continue;
       }
@@ -138,7 +135,7 @@ app.post('/webhook/whatsapp', async (req, res) => {
     }
   } catch (error) {
     console.error('Webhook error:', error);
->>>>>>> 19be898bc5861f922a57882ba0af3f25d0f0787f
+
   }
 });
 
