@@ -6,7 +6,6 @@ const META_BASE = `https://graph.facebook.com/${META_VERSION}/${PHONE_NUMBER_ID}
 
 async function sendWhatsApp(to, message) {
   const phone = to.replace(/^\+/, '').trim();
-
   try {
     const response = await axios.post(
       `${META_BASE}/messages`,
@@ -34,7 +33,6 @@ async function sendWhatsApp(to, message) {
 
 async function sendWhatsAppTemplate(to, templateName, components = []) {
   const phone = to.replace(/^\+/, '').trim();
-
   try {
     const response = await axios.post(
       `${META_BASE}/messages`,

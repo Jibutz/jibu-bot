@@ -22,12 +22,17 @@ const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 app.get('/', (req, res) => {
   res.json({ status: 'JIBU bot is running 🎓', time: new Date().toISOString() });
 });
+<<<<<<< HEAD
 
 // ─── WhatsApp Webhook Verification (Meta Cloud API) ──────────────────────────
+=======
+// — WhatsApp Webhook Verification
+>>>>>>> 19be898bc5861f922a57882ba0af3f25d0f0787f
 app.get('/webhook/whatsapp', (req, res) => {
   const mode = req.query['hub.mode'];
   const token = req.query['hub.verify_token'];
   const challenge = req.query['hub.challenge'];
+<<<<<<< HEAD
 
   if (mode === 'subscribe' && token === process.env.WHATSAPP_VERIFY_TOKEN) {
     console.log('✅ WhatsApp webhook verified');
@@ -52,6 +57,30 @@ app.post('/webhook/whatsapp', async (req, res) => {
       const text = (message.text?.body || '').trim().toUpperCase();
 
       // NECTA results lookup
+=======
+  if (mode === 'subscribe' && token === process.env.WEBHOOK_VERIFY_TOKEN) {
+    res.status(200).send(challenge);
+  } else {
+    res.sendStatus(403);
+  }
+});
+// —— WhatsApp Webhook (Meta Cloud API)
+app.post('/webhook/whatsapp', async (req, res) => {
+  res.sendStatus(200);
+  try {
+    const body = req.body;
+    const entry = body?.entry?.[0];
+    const changes = entry?.changes?.[0];
+    const value = changes?.value;
+    const messages = value?.messages;
+
+    if (!messages?.length) return;
+
+    for (const message of messages) {
+      const phone = message.from;
+      const text = (message.text?.body || '').trim().toUpperCase();
+
+>>>>>>> 19be898bc5861f922a57882ba0af3f25d0f0787f
       if (text.startsWith('JIBU MATOKEO')) {
         await handleNectaResults(phone, text, 'whatsapp');
         continue;
@@ -60,6 +89,7 @@ app.post('/webhook/whatsapp', async (req, res) => {
       const student = await getStudentByPhone(phone);
 
       if (!student) {
+<<<<<<< HEAD
         await enrollmentFlow(phone, text, null, 'whatsapp');
         continue;
       }
@@ -81,6 +111,34 @@ app.post('/webhook/whatsapp', async (req, res) => {
     }
   } catch (err) {
     console.error('WhatsApp webhook error:', err);
+=======
+        await enrollmentFlow(phone, text, 'whatsapp');
+        continue;
+      }
+
+      const validAnswers = ['A', 'B', 'C', 'D'];
+      if (validAnswers.includes(text) && student.Todays_Correct_Answer) {
+        const isCorrect = text === student.Todays_Correct_Answer;
+        const feedback = await generateFeedback(student, text, isCorrect);
+        const newStreak = isCorrect ? (student.Current_Streak || 0) + 1 : (student.Current_Streak || 0);
+        const newPoints = isCorrect ? (student.Total_Points || 0) + 10 : (student.Total_Points || 0);
+        const rankTitle = getRankTitle(newStreak);
+        await updateStudent(student.id, {
+          Current_Streak: newStreak,
+          Longest_Streak: Math.max(newStreak, student.Longest_Streak || 0),
+          Total_Points: newPoints,
+          Last_Answer_Date: new Date().toISOString().split('T')[0],
+          Rank_Title: rankTitle
+        });
+        await sendWhatsApp(phone, feedback);
+      } else {
+        const question = await generateQuestion(student);
+        await sendWhatsApp(phone, question);
+      }
+    }
+  } catch (error) {
+    console.error('Webhook error:', error);
+>>>>>>> 19be898bc5861f922a57882ba0af3f25d0f0787f
   }
 });
 
