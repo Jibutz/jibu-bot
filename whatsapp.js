@@ -6,6 +6,7 @@ const META_BASE = `https://graph.facebook.com/${META_VERSION}/${PHONE_NUMBER_ID}
 
 async function sendWhatsApp(to, message) {
   const phone = to.replace(/^\+/, '').trim();
+  console.log(`🔑 WHATSAPP_TOKEN starts with: ${(process.env.WHATSAPP_TOKEN || '').slice(0, 20)}`);
   try {
     const response = await axios.post(
       `${META_BASE}/messages`,
