@@ -1,4 +1,4 @@
-const axios = require('axios');
+const axios = require('axios'); // v2
 
 async function sendWhatsApp(to, message) {
   const phone = to.replace(/^\+/, '').trim();
