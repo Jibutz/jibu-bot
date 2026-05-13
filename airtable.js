@@ -50,7 +50,7 @@ async function createStudent(data) {
       Todays_Correct_Answer: '',
       Status: 'Trial',
       Trial_Status: 'Active',
-      Trial_End_Date: data.trialEndDate || '',
+      Trial_End_Date: data.trialEndDate || null,
       Channel: data.channel || 'whatsapp',
       School_Name: data.school || '',
       Enrollment_Step: data.enrollmentStep || 1,
