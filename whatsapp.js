@@ -22,7 +22,7 @@ async function sendWhatsApp(to, message) {
     console.log('✅ sent to ' + phone);
     return response.data;
   } catch (err) {
-    console.error('❌ error:', JSON.stringify(err.response?.data) || err.message);
+    console.error('❌ error:', JSON.stringify(err.response?.data, null, 2) || err.message);
     throw err;
   }
 }
