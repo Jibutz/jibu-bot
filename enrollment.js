@@ -59,7 +59,7 @@ async function enrollmentFlow(phone, message, student, channel) {
         );
         return;
       }
-      await updateStudent(student.id, { Subjects: parsedSubjects.join(', '), Subject: parsedSubjects[0], Enrollment_Step: 4 });
+      await updateStudent(student.id, { Subjects: parsedSubjects.join(', '), Enrollment_Step: 4 });
       await send(phone,
         `Masomo: ${parsedSubjects.join(', ')} ✅\n\nNambari ya M-Pesa ya mzazi / Parent's M-Pesa number?\n\nMfano: 0712345678`
       );
