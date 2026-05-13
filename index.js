@@ -22,30 +22,31 @@ const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 app.get('/', (req, res) => {
   res.json({ status: 'JIBU bot is running 🎓', time: new Date().toISOString() });
 });
-// — WhatsApp Webhook Verification
+
+// ─── WhatsApp Webhook Verification (Meta Cloud API) ──────────────────────────
 app.get('/webhook/whatsapp', (req, res) => {
   const mode = req.query['hub.mode'];
   const token = req.query['hub.verify_token'];
   const challenge = req.query['hub.challenge'];
-  if (mode === 'subscribe' && token === process.env.WEBHOOK_VERIFY_TOKEN) {
-    res.status(200).send(challenge);
-  } else {
-    res.sendStatus(403);
+  if (mode === 'subscribe' && token === process.env.WHATSAPP_VERIFY_TOKEN) {
+    console.log('✅ WhatsApp webhook verified');
+    return res.status(200).send(challenge);
   }
+  res.sendStatus(403);
 });
-// —— WhatsApp Webhook (Meta Cloud API)
+
+// ─── WhatsApp Webhook (Meta Cloud API) ───────────────────────────────────────
 app.post('/webhook/whatsapp', async (req, res) => {
   res.sendStatus(200);
   try {
     const body = req.body;
-    const entry = body?.entry?.[0];
-    const changes = entry?.changes?.[0];
-    const value = changes?.value;
-    const messages = value?.messages;
+    if (body.object !== 'whatsapp_business_account') return;
 
+    const messages = body.entry?.[0]?.changes?.[0]?.value?.messages;
     if (!messages?.length) return;
 
     for (const message of messages) {
+      if (message.type !== 'text') continue;
       const phone = message.from;
       const text = (message.text?.body || '').trim().toUpperCase();
 
@@ -57,32 +58,24 @@ app.post('/webhook/whatsapp', async (req, res) => {
       const student = await getStudentByPhone(phone);
 
       if (!student) {
-        await enrollmentFlow(phone, text, 'whatsapp');
+        await enrollmentFlow(phone, text, null, 'whatsapp');
         continue;
       }
 
-      const validAnswers = ['A', 'B', 'C', 'D'];
-      if (validAnswers.includes(text) && student.Todays_Correct_Answer) {
-        const isCorrect = text === student.Todays_Correct_Answer;
-        const feedback = await generateFeedback(student, text, isCorrect);
-        const newStreak = isCorrect ? (student.Current_Streak || 0) + 1 : (student.Current_Streak || 0);
-        const newPoints = isCorrect ? (student.Total_Points || 0) + 10 : (student.Total_Points || 0);
-        const rankTitle = getRankTitle(newStreak);
-        await updateStudent(student.id, {
-          Current_Streak: newStreak,
-          Longest_Streak: Math.max(newStreak, student.Longest_Streak || 0),
-          Total_Points: newPoints,
-          Last_Answer_Date: new Date().toISOString().split('T')[0],
-          Rank_Title: rankTitle
-        });
-        await sendWhatsApp(phone, feedback);
-      } else {
-        const question = await generateQuestion(student);
-        await sendWhatsApp(phone, question);
+      if (['A', 'B', 'C', 'D'].includes(text)) {
+        await processAnswer(student, text, phone, 'whatsapp');
+        continue;
       }
+
+      if (student.Status === 'Enrolling') {
+        await enrollmentFlow(phone, text, student, 'whatsapp');
+        continue;
+      }
+
+      await sendWhatsApp(phone, `Karibu JIBU! 📚 Jibu kwa A, B, C au D baada ya kupata swali. Kwa msaada tuma "HELP".`);
     }
-  } catch (error) {
-    console.error('Webhook error:', error);
+  } catch (err) {
+    console.error('WhatsApp webhook error:', err);
   }
 });
 
@@ -172,7 +165,6 @@ async function processAnswer(student, answer, phone, channel) {
     newStreak += 1;
     newPoints += 10;
   } else {
-    // Add subject to weak topics
     const subject = student.Subject || student.Subjects?.split(',')[0] || 'General';
     if (!weakTopics.includes(subject)) {
       weakTopics = weakTopics ? `${weakTopics}, ${subject}` : subject;
@@ -193,7 +185,6 @@ async function processAnswer(student, answer, phone, channel) {
     Todays_Correct_Answer: '',
   });
 
-  // Generate personalised feedback via Claude
   const feedback = await generateFeedback(
     student.Student_Name,
     isCorrect,
@@ -206,7 +197,6 @@ async function processAnswer(student, answer, phone, channel) {
   const suffix = `\n\n📊 Streak: ${newStreak} | Points: ${newPoints} | ${newRank}`;
   await send(phone, feedback + suffix);
 
-  // Milestone check
   const milestone = checkMilestone(newStreak);
   if (milestone) {
     const milestoneMsg = getMilestoneMessage(student.Student_Name, newStreak, newRank);
@@ -222,7 +212,7 @@ cron.schedule('0 13 * * *', async () => {
     const students = await getAllActiveStudents();
     for (const student of students) {
       await sendDailyQuestion(student);
-      await sleep(500); // Rate limiting
+      await sleep(500);
     }
   } catch (err) {
     console.error('Daily questions cron error:', err);
@@ -266,10 +256,7 @@ cron.schedule('59 20 * * *', async () => {
           `🛡️ Kinga imetumika ${student.Student_Name}! Streak yako iko salama. Freezes zilizobaki: ${freezes - 1}`
         );
       } else {
-        await updateStudent(student.id, {
-          Current_Streak: 0,
-          Rank_Title: 'Mwanafunzi',
-        });
+        await updateStudent(student.id, { Current_Streak: 0, Rank_Title: 'Mwanafunzi' });
         await send(student.Student_Phone,
           `💔 ${student.Student_Name}, streak yako imevunjika. Streak: 0 | Anza upya leo! Jibu swali la kesho. 💪`
         );
@@ -308,7 +295,6 @@ cron.schedule('0 6 * * *', async () => {
     for (const student of students) {
       const send = student.Channel === 'SMS' ? sendSMS : sendWhatsApp;
 
-      // Trial expiry
       if (student.Status === 'Trial' && student.Trial_End_Date === today) {
         const payLink = await createPaymentLink(student.Student_Phone, 5000, `JIBU subscription - ${student.Student_Name}`);
         await send(student.Student_Phone,
@@ -316,7 +302,6 @@ cron.schedule('0 6 * * *', async () => {
         );
       }
 
-      // Trial grace period expired (2 days after trial end)
       if (student.Status === 'Trial' && student.Trial_Status !== 'Paid') {
         const trialEnd = new Date(student.Trial_End_Date);
         const graceEnd = new Date(trialEnd);
@@ -329,7 +314,6 @@ cron.schedule('0 6 * * *', async () => {
         }
       }
 
-      // Payment renewal reminder (3 days before)
       if (student.Status === 'Active' && student.Next_Payment_Date) {
         const nextPayDate = new Date(student.Next_Payment_Date);
         const reminderDate = new Date(nextPayDate);
@@ -342,7 +326,6 @@ cron.schedule('0 6 * * *', async () => {
         }
       }
 
-      // Pause if overdue
       if (student.Status === 'Active' && student.Next_Payment_Date < today) {
         await updateStudent(student.id, { Status: 'Paused' });
       }
