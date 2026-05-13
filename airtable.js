@@ -40,7 +40,6 @@ async function createStudent(data) {
       Parent_Phone: data.parentPhone || '',
       Form_level: data.form || '',
       Subjects: data.subjects || '',
-      Subject: (data.subjects || '').split(',')[0].trim(),
       Current_Streak: 0,
       Longest_Streak: 0,
       Total_Points: 0,
