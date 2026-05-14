@@ -113,8 +113,8 @@ async function enrollmentFlow(phone, message, student, channel) {
       }
       await updateStudent(student.id, { Subjects: parsedSubjects.join(', '), Enrollment_Step: 4 });
       await send(phone, t(student,
-        `Poa! ✅ ${parsedSubjects.join(', ')}\n\nAlmost done! What's the parent's M-Pesa number for billing?\n\nExample: 0712345678`,
-        `Sawa fiti! ✅ ${parsedSubjects.join(', ')}\n\nKaribu mwisho! Nambari ya M-Pesa ya mzazi kwa malipo:\n\nMfano: 0712345678`
+        `Poa! ✅ ${parsedSubjects.join(', ')}\n\nYou can change your subjects anytime by sending SUBJECTS.\n\nAlmost done! What's the parent's M-Pesa number for billing?\n\nExample: 0712345678`,
+        `Sawa fiti! ✅ ${parsedSubjects.join(', ')}\n\nUnaweza kubadilisha masomo yako wakati wowote kwa kutuma SUBJECTS.\n\nKaribu mwisho! Nambari ya M-Pesa ya mzazi kwa malipo:\n\nMfano: 0712345678`
       ));
       break;
     }

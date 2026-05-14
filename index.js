@@ -304,13 +304,16 @@ async function sendDailyQuestion(student) {
     if (!subjects.length) return;
 
     const queue = [];
+    const formLevel = student.Form_level || '4';
     for (const subject of subjects) {
-      const parsed = await generateQuestion(subject, student.Form_level || '4');
-      const questionBody = `${parsed.questionBody}\nA) ${parsed.optionA}\nB) ${parsed.optionB}\nC) ${parsed.optionC}\nD) ${parsed.optionD}`;
-      const answer = (parsed.answer || 'A').toUpperCase().charAt(0);
-      console.log(`📚 Question for ${subject}: answer="${answer}", q="${parsed.questionBody?.slice(0,60)}"`);
-      queue.push({ subject, questionBody, answer, done: false });
-      await sleep(200);
+      for (let i = 0; i < 3; i++) {
+        const parsed = await generateQuestion(subject, formLevel);
+        const questionBody = `${parsed.questionBody}\nA) ${parsed.optionA}\nB) ${parsed.optionB}\nC) ${parsed.optionC}\nD) ${parsed.optionD}`;
+        const answer = (parsed.answer || 'A').toUpperCase().charAt(0);
+        console.log(`📚 ${subject} Q${i+1}: answer="${answer}", q="${parsed.questionBody?.slice(0,60)}"`);
+        queue.push({ subject, questionBody, answer, done: false });
+        await sleep(300);
+      }
     }
 
     await updateStudent(student.id, { Todays_Correct_Answer: JSON.stringify(queue) });
@@ -324,7 +327,8 @@ async function sendDailyQuestion(student) {
       `🔥 Siku ${streak} | ${rank} | ${student.Student_Name}\n\n`
     );
     const first = queue[0];
-    const qNum = `📚 ${first.subject} — Question 1 of ${subjects.length}\n\n`;
+    const total = queue.length;
+    const qNum = `📚 ${first.subject} — Question 1 of ${total}\n\n`;
     const footer = t(student, `\n\nReply A, B, C or D!`, `\n\nJibu kwa A, B, C au D!`);
     await send(student.Student_Phone, header + qNum + first.questionBody + footer);
   } catch (err) {
