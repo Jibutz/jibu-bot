@@ -3,109 +3,125 @@ const Anthropic = require('@anthropic-ai/sdk');
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 /**
- * Generate a NECTA-style multiple choice question for a student
- * Returns { question: string, answer: string }
+ * Generate a NECTA-style multiple choice question for one specific subject.
+ * Returns { questionBody: string, answer: string }
+ * questionBody is just the question text + A/B/C/D options, no header/footer.
  */
-async function generateQuestion(student) {
+async function generateQuestion(student, subject) {
   const formLevel = student.Form_level || '4';
   const weakTopics = student.Weak_Topics || '';
-  const subjects = student.Subjects || student.Subject || 'Mathematics';
 
-  const systemPrompt = `You are JIBU, a Tanzanian NECTA exam tutor. Generate 1 multiple choice question for a Form ${formLevel} student studying ${subjects}. ${weakTopics ? `Focus on their weak topic: ${weakTopics}.` : 'Choose a topic randomly from their subjects.'} 
+  const systemPrompt = `You are JIBU, a Tanzanian NECTA exam tutor. Generate exactly 1 multiple-choice question for a Form ${formLevel} student in the subject: ${subject}.
+${weakTopics ? `Prioritise their weak topic: ${weakTopics}.` : ''}
 
-Format your response EXACTLY like this:
-[Question text here]
+You MUST respond in this exact format and nothing else:
+[Question text here — one sentence, exam style]
 A) [option]
 B) [option]
 C) [option]
 D) [option]
 ANSWER: [single letter A, B, C, or D]
 
-Style must match real NECTA past papers. Teach in English. Include one short Swahili encouragement phrase at the start (e.g., "Jaribu bidii! -"). Keep the question clear and exam-appropriate.`;
+Rules:
+- Match real NECTA past paper style and difficulty
+- Question must be in English
+- Options must be distinct and plausible
+- No extra commentary, no preamble — only the format above`;
 
   try {
     const response = await client.messages.create({
-      model: 'claude-opus-4-5',
-      max_tokens: 400,
-      messages: [{ role: 'user', content: 'Generate a question now.' }],
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 300,
+      messages: [{ role: 'user', content: 'Generate the question now.' }],
       system: systemPrompt,
     });
 
-    const text = response.content[0].text.trim();
-    const lines = text.split('\n');
-    const answerLine = lines.find(l => l.startsWith('ANSWER:'));
-    const answer = answerLine ? answerLine.replace('ANSWER:', '').trim().toUpperCase().charAt(0) : 'A';
-    const questionBlock = lines.filter(l => !l.startsWith('ANSWER:')).join('\n').trim();
+    console.log(`📡 Claude API response for ${subject}:`, JSON.stringify(response.content));
 
-    return { question: questionBlock, answer };
+    const text = (response.content[0] && response.content[0].text) ? response.content[0].text.trim() : '';
+    console.log(`📝 Raw text for ${subject}:\n${text}`);
+
+    if (!text) {
+      throw new Error('Empty response from Claude API');
+    }
+
+    const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+    const answerLine = lines.find(l => l.toUpperCase().startsWith('ANSWER:'));
+    const answer = answerLine
+      ? answerLine.replace(/ANSWER:/i, '').trim().toUpperCase().charAt(0)
+      : 'A';
+    const questionBody = lines
+      .filter(l => !l.toUpperCase().startsWith('ANSWER:'))
+      .join('\n');
+
+    console.log(`✅ Parsed ${subject} — answer: ${answer}, body: "${questionBody.slice(0, 60)}"`);
+
+    if (!questionBody) {
+      throw new Error('Parsed empty questionBody');
+    }
+
+    return { questionBody, answer };
   } catch (err) {
-    console.error('Claude generateQuestion error:', err);
-    // Fallback question
+    console.error(`Claude generateQuestion error (${subject}):`, err.message);
     return {
-      question: `Jaribu bidii!\n\nWhich of the following is correct?\nA) Option A\nB) Option B\nC) Option C\nD) Option D`,
+      questionBody: `Which of the following is true about ${subject} for Form ${formLevel}?\nA) Statement A\nB) Statement B\nC) Statement C\nD) Statement D`,
       answer: 'A',
     };
   }
 }
 
 /**
- * Generate personalised feedback after student answers
+ * Generate personalised feedback after a student answers a question.
  */
-async function generateFeedback(studentName, isCorrect, studentAnswer, correctAnswer, subjects, formLevel) {
-  const systemPrompt = `You are JIBU, a warm and encouraging Tanzanian AI tutor. The student just answered a ${subjects} question for Form ${formLevel}. 
+async function generateFeedback(studentName, isCorrect, studentAnswer, correctAnswer, subject, formLevel) {
+  const systemPrompt = `You are JIBU, a warm Tanzanian AI tutor. A Form ${formLevel} student just answered a ${subject} question.
 ${isCorrect
-  ? `They answered correctly (${studentAnswer}). Give a short, enthusiastic congratulatory message in English. Include one Swahili celebration phrase. Briefly explain WHY the answer is correct in 1-2 sentences. Keep total response under 200 characters.`
-  : `They answered ${studentAnswer} but the correct answer was ${correctAnswer}. Give a kind, encouraging message in English. Include one Swahili encouragement phrase. Briefly explain the correct answer in 1-2 sentences. Keep total response under 200 characters.`}
-Start with the student's name ${studentName}.`;
+    ? `They got it RIGHT (answered ${studentAnswer}). Write a short enthusiastic English congratulation, mention one Swahili celebration phrase, and explain in 1 sentence WHY that answer is correct.`
+    : `They answered ${studentAnswer} but the correct answer was ${correctAnswer}. Write a kind English encouragement, mention one Swahili phrase, and explain the correct answer in 1 sentence.`}
+Start with the student's name: ${studentName}. Keep total under 220 characters.`;
 
   try {
     const response = await client.messages.create({
-      model: 'claude-opus-4-5',
-      max_tokens: 200,
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 220,
       messages: [{ role: 'user', content: 'Generate feedback now.' }],
       system: systemPrompt,
     });
     return response.content[0].text.trim();
   } catch (err) {
-    console.error('Claude generateFeedback error:', err);
-    if (isCorrect) {
-      return `✅ Vizuri sana ${studentName}! Jibu sahihi ni ${correctAnswer}. Hongera! Endelea hivyo! 🌟`;
-    } else {
-      return `💪 Pole ${studentName}. Jibu sahihi lilikuwa ${correctAnswer}. Jaribu tena kesho! Usikate tamaa!`;
-    }
+    console.error('Claude generateFeedback error:', err.message);
+    return isCorrect
+      ? `✅ Vizuri sana ${studentName}! Correct — the answer is ${correctAnswer}. Hongera! 🌟`
+      : `💪 Pole ${studentName}. The correct answer was ${correctAnswer}. Jaribu tena kesho!`;
   }
 }
 
 /**
- * Generate weekly parent report
+ * Generate weekly parent report.
  */
 async function generateParentReport(student) {
-  const systemPrompt = `You are JIBU, a Tanzanian AI education platform. Write a brief, warm weekly progress report for a parent about their child. 
+  const systemPrompt = `You are JIBU, a Tanzanian AI education platform. Write a brief warm weekly progress report for a parent.
 
-Child's name: ${student.Student_Name}
-Form: ${student.Form_level}
-Subjects: ${student.Subjects || student.Subject}
-Current streak: ${student.Current_Streak || 0} days
-Longest streak: ${student.Longest_Streak || 0} days
-Total points: ${student.Total_Points || 0}
-Rank: ${student.Rank_Title || 'Mwanafunzi'}
-Strong topics: ${student.Strong_Topics || 'Still being assessed'}
-Weak topics: ${student.Weak_Topics || 'Still being assessed'}
-Days until NECTA: ${student.Days_Until_Exam || 'Not set'}
+Child: ${student.Student_Name}, Form ${student.Form_level}
+Subjects: ${student.Subjects}
+Streak: ${student.Current_Streak || 0} days | Longest: ${student.Longest_Streak || 0} days
+Points: ${student.Total_Points || 0} | Rank: ${student.Rank_Title || 'Mwanafunzi'}
+Strong: ${student.Strong_Topics || 'Still being assessed'}
+Weak: ${student.Weak_Topics || 'Still being assessed'}
 
-Write in English. Start with a warm Swahili greeting (Habari za familia!). Keep it to 3-4 sentences. Be encouraging and specific. End with a Swahili motivational phrase. Keep total under 300 characters.`;
+Write in English. Open with a warm Swahili greeting. 3-4 sentences, encouraging and specific. End with a Swahili motivational phrase. Under 300 characters total.`;
 
   try {
     const response = await client.messages.create({
-      model: 'claude-opus-4-5',
+      model: 'claude-haiku-4-5-20251001',
       max_tokens: 300,
       messages: [{ role: 'user', content: 'Generate parent report.' }],
       system: systemPrompt,
     });
     return response.content[0].text.trim();
   } catch (err) {
-    console.error('Claude generateParentReport error:', err);
-    return `Habari za familia! 📊 Weekly report for ${student.Student_Name}: Current streak ${student.Current_Streak || 0} days, Total points: ${student.Total_Points || 0}. Rank: ${student.Rank_Title || 'Mwanafunzi'}. Mungu awabariki! 🙏`;
+    console.error('Claude generateParentReport error:', err.message);
+    return `Habari za familia! 📊 ${student.Student_Name} — Streak: ${student.Current_Streak || 0} days, Points: ${student.Total_Points || 0}, Rank: ${student.Rank_Title || 'Mwanafunzi'}. Mungu awabariki! 🙏`;
   }
 }
 

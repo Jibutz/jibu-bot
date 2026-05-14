@@ -301,6 +301,7 @@ async function sendDailyQuestion(student) {
     const queue = [];
     for (const subject of subjects) {
       const { questionBody, answer } = await generateQuestion(student, subject);
+      console.log(`📚 Question for ${subject}: body="${questionBody?.slice(0,50)}" answer="${answer}"`);
       queue.push({ subject, questionBody, answer, done: false });
       await sleep(200);
     }
