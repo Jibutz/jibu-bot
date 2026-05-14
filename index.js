@@ -15,6 +15,7 @@ const { generateQuestion, generateFeedback, generateParentReport } = require('./
 const { getRankTitle, checkMilestone, getMilestoneMessage } = require('./ranks');
 const { enrollmentFlow } = require('./enrollment');
 const { handleNectaResults } = require('./necta');
+const { t } = require('./lang');
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -62,6 +63,18 @@ app.post('/webhook/whatsapp', async (req, res) => {
         continue;
       }
 
+      // Language preference toggle
+      if (text === 'SWAHILI' || text === 'NIAMBIE KWA KISWAHILI') {
+        await updateStudent(student.id, { Language_Pref: 'sw' });
+        await sendWhatsApp(phone, `Got it! 🇹🇿 Nitaongea nawe kwa Kiswahili zaidi from now on. Send "English" anytime to switch back.`);
+        continue;
+      }
+      if (text === 'ENGLISH') {
+        await updateStudent(student.id, { Language_Pref: 'en' });
+        await sendWhatsApp(phone, `Got it! 🇬🇧 Switching to English mode. Send "Swahili" anytime to switch.`);
+        continue;
+      }
+
       if (['A', 'B', 'C', 'D'].includes(text)) {
         await processAnswer(student, text, phone, 'whatsapp');
         continue;
@@ -72,7 +85,10 @@ app.post('/webhook/whatsapp', async (req, res) => {
         continue;
       }
 
-      await sendWhatsApp(phone, `Karibu JIBU! 📚 Jibu kwa A, B, C au D baada ya kupata swali. Kwa msaada tuma "HELP".`);
+      await sendWhatsApp(phone, t(student,
+        `Hey! 👋 Reply A, B, C or D after you get your daily question. Need help? Send HELP!`,
+        `Habari! 👋 Jibu kwa A, B, C au D ukipata swali lako la leo. Msaada? Tuma HELP!`
+      ));
     }
   } catch (err) {
     console.error('WhatsApp webhook error:', err);
@@ -135,9 +151,10 @@ app.post('/webhook/payment', async (req, res) => {
     });
 
     const send = student.Channel === 'SMS' ? sendSMS : sendWhatsApp;
-    await send(student.Student_Phone,
-      `✅ Asante ${student.Student_Name}! Malipo yako yamefanikiwa. JIBU itaendelea kukutumia maswali kila siku. Streak yako iko salama! 🔥`
-    );
+    await send(student.Student_Phone, t(student,
+      `✅ Payment received, ${student.Student_Name}! You're all set — JIBU will keep sending your daily questions. Streak iko salama! 🔥`,
+      `✅ Asante ${student.Student_Name}! Malipo yamefanikiwa — JIBU itaendelea. Streak yako iko salama! 🔥`
+    ));
   } catch (err) {
     console.error('Payment webhook error:', err);
   }
@@ -149,7 +166,10 @@ async function processAnswer(student, answer, phone, channel) {
   const correct = (student.Todays_Correct_Answer || '').toUpperCase();
 
   if (!correct) {
-    await send(phone, `Hakuna swali la leo bado. Subiri hadi saa 10 jioni. ⏰`);
+    await send(phone, t(student,
+      `No question yet for today! Come back at 4:00 PM. ⏰`,
+      `Bado hakuna swali leo! Rudi saa 10 jioni. ⏰`
+    ));
     return;
   }
 
@@ -252,14 +272,16 @@ cron.schedule('59 20 * * *', async () => {
 
       if (freezes > 0) {
         await updateStudent(student.id, { Freeze_Credits: freezes - 1 });
-        await send(student.Student_Phone,
-          `🛡️ Kinga imetumika ${student.Student_Name}! Streak yako iko salama. Freezes zilizobaki: ${freezes - 1}`
-        );
+        await send(student.Student_Phone, t(student,
+          `🛡️ Streak Shield used, ${student.Student_Name}! Your streak is safe — ${freezes - 1} shield(s) left. Keep going! 💪`,
+          `🛡️ Kinga imetumika ${student.Student_Name}! Streak yako iko salama — Shields zilizobaki: ${freezes - 1}. Endelea! 💪`
+        ));
       } else {
         await updateStudent(student.id, { Current_Streak: 0, Rank_Title: 'Mwanafunzi' });
-        await send(student.Student_Phone,
-          `💔 ${student.Student_Name}, streak yako imevunjika. Streak: 0 | Anza upya leo! Jibu swali la kesho. 💪`
-        );
+        await send(student.Student_Phone, t(student,
+          `💔 ${student.Student_Name}, your streak is gone! Back to 0 — but today is a new day. Answer tomorrow's question and rebuild! 💪`,
+          `💔 ${student.Student_Name}, streak yako imevunjika! Streak: 0 — lakini kesho ni siku mpya. Jibu swali la kesho uanze tena! 💪`
+        ));
       }
       await sleep(300);
     }
@@ -297,9 +319,10 @@ cron.schedule('0 6 * * *', async () => {
 
       if (student.Status === 'Trial' && student.Trial_End_Date === today) {
         const payLink = await createPaymentLink(student.Student_Phone, 5000, `JIBU subscription - ${student.Student_Name}`);
-        await send(student.Student_Phone,
-          `⏰ ${student.Student_Name}, siku 7 za JIBU zimekwisha! Streak yako ni siku ${student.Current_Streak}. Endelea kwa TZS 5,000 tu kwa mwezi.\n\nLipa sasa: ${payLink}\n\nUkikosa kulipa leo streak yako itaisha kesho.`
-        );
+        await send(student.Student_Phone, t(student,
+          `⏰ ${student.Student_Name}, your 7-day free trial ends today! Your streak is at ${student.Current_Streak} days — don't lose it!\n\nContinue for just TZS 5,000/month:\n${payLink}\n\nPay today to keep your streak alive! 🔥`,
+          `⏰ ${student.Student_Name}, siku 7 za JIBU zimekwisha! Streak yako ni siku ${student.Current_Streak} — usiipoteze!\n\nEndelea kwa TZS 5,000 tu kwa mwezi:\n${payLink}\n\nLipa leo streak yako iendelee! 🔥`
+        ));
       }
 
       if (student.Status === 'Trial' && student.Trial_Status !== 'Paid') {
@@ -308,9 +331,10 @@ cron.schedule('0 6 * * *', async () => {
         graceEnd.setDate(graceEnd.getDate() + 2);
         if (new Date() > graceEnd) {
           await updateStudent(student.id, { Status: 'Paused', Trial_Status: 'Trial_Expired' });
-          await send(student.Student_Phone,
+          await send(student.Student_Phone, t(student,
+            `😔 ${student.Student_Name}, JIBU is paused — payment overdue. Pay TZS 5,000 to get back in. Your ${student.Current_Streak}-day streak is waiting! 💪`,
             `😔 ${student.Student_Name}, JIBU imesimamishwa kwa sababu ya malipo. Lipa TZS 5,000 kuendelea. Streak yako ya siku ${student.Current_Streak} inakusubiri! 💪`
-          );
+          ));
         }
       }
 
@@ -320,9 +344,10 @@ cron.schedule('0 6 * * *', async () => {
         reminderDate.setDate(reminderDate.getDate() - 3);
         if (new Date().toISOString().split('T')[0] === reminderDate.toISOString().split('T')[0]) {
           const payLink = await createPaymentLink(student.Student_Phone, 5000, `JIBU renewal - ${student.Student_Name}`);
-          await send(student.Student_Phone,
-            `🔔 ${student.Student_Name}, usahau! Usajili wa JIBU unakwisha tarehe ${student.Next_Payment_Date}. Lipa TZS 5,000: ${payLink}`
-          );
+          await send(student.Student_Phone, t(student,
+            `🔔 Heads up, ${student.Student_Name}! Your JIBU subscription renews on ${student.Next_Payment_Date}. Stay ahead — pay TZS 5,000 now:\n${payLink}`,
+            `🔔 ${student.Student_Name}, usisahau! Usajili wako unakwisha ${student.Next_Payment_Date}. Lipa TZS 5,000 mapema:\n${payLink}`
+          ));
         }
       }
 

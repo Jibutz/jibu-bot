@@ -25,7 +25,7 @@ async function handleNectaResults(phone, message, channel) {
 
     if (!indexNumber) {
       await send(phone,
-        `Tuma namba yako ya index. Mfano: JIBU MATOKEO S1234/0001/2024`
+        `Include your index number in the message! Example: JIBU MATOKEO S1234/0001/2024`
       );
       return;
     }
@@ -38,7 +38,7 @@ async function handleNectaResults(phone, message, channel) {
     });
 
     await send(phone,
-      `🎓 Matokeo ya ${indexNumber}\n\nBei: TZS 500 tu.\n\nTuma nambari yako ya M-Pesa kulipa na kupata matokeo.`
+      `🎓 NECTA Results for ${indexNumber}\n\nFee: TZS 500 only.\n\nSend your M-Pesa number to pay and get your results instantly! 📋`
     );
     return;
   }
@@ -49,7 +49,7 @@ async function handleNectaResults(phone, message, channel) {
     const mpesaPhone = formatPhone(message.trim());
 
     if (!mpesaPhone) {
-      await send(phone, `Nambari haikueleweka. Tuma nambari ya M-Pesa (mfano: 0712345678)`);
+      await send(phone, `That number doesn't look right! Send your M-Pesa number (example: 0712345678)`);
       return;
     }
 
@@ -63,14 +63,14 @@ async function handleNectaResults(phone, message, channel) {
       );
 
       await send(phone,
-        `💳 Lipa TZS 500 kupata matokeo ya ${pending.indexNumber}:\n\n${payLink}\n\nBaada ya kulipa, matokeo yatatumwa mara moja.`
+        `💳 Pay TZS 500 to get results for ${pending.indexNumber}:\n\n${payLink}\n\nResults will be sent instantly after payment! ✅`
       );
 
       // Save to Airtable for follow-up
       await saveNectaLookup(phone, pending.indexNumber, mpesaPhone, channel);
     } catch (err) {
       console.error('NECTA payment error:', err);
-      await send(phone, `Samahani, kuna tatizo la malipo. Jaribu tena baadaye.`);
+      await send(phone, `Sorry, there was a payment error! 😬 Please try again in a moment.`);
     }
     return;
   }
@@ -88,14 +88,14 @@ async function deliverNectaResult(phone, indexNumber, channel) {
     const result = await fetchNectaResult(indexNumber);
 
     await send(phone,
-      `📋 Matokeo ya ${indexNumber}:\n\n${result}\n\n---\nJifunze na JIBU kwa TZS 5,000/mwezi tu! Tuma JIBU kujiunga.`
+      `📋 NECTA Results for ${indexNumber}:\n\n${result}\n\n---\nWant to keep improving? Study with JIBU for just TZS 5,000/month! Send JIBU to join. 🎓`
     );
 
     // Schedule 3-day follow-up
     scheduleFollowUp(phone, indexNumber, channel);
   } catch (err) {
     console.error('NECTA result delivery error:', err);
-    await send(phone, `Samahani, matokeo ya ${indexNumber} hayapatikani sasa. Jaribu tena au wasiliana na NECTA moja kwa moja.`);
+    await send(phone, `Sorry, results for ${indexNumber} aren't available right now. Try again later or contact NECTA directly.`);
   }
 }
 
@@ -145,7 +145,7 @@ function scheduleFollowUp(phone, indexNumber, channel) {
     try {
       const send = channel === 'SMS' ? sendSMS : sendWhatsApp;
       await send(phone,
-        `🎓 Habari! Matokeo ya ${indexNumber} yalikuwa yapi?\n\nJibu na JIBU! Jibu maswali ya NECTA kila siku, fuatilia maendeleo yako, na fanya vizuri zaidi!\n\nJaribu bure kwa siku 7. Tuma JIBU kuanza.`
+        `🎓 Hey! How did ${indexNumber} go? 👀\n\nLevel up with JIBU — answer NECTA questions daily, track your progress, and score higher!\n\n7 days free — bure kabisa! Send JIBU to start. 🔥`
       );
     } catch (err) {
       console.error('NECTA follow-up error:', err);
