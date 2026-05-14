@@ -43,28 +43,31 @@ Now generate a question for Form ${formLevel} ${subject}:`;
 }
 
 /**
- * Generate personalised feedback after a student answers a question.
+ * Generate a one-sentence explanation for a question answer.
  */
-async function generateFeedback(studentName, isCorrect, studentAnswer, correctAnswer, subject, formLevel) {
-  const systemPrompt = `You are JIBU, a warm Tanzanian AI tutor. A Form ${formLevel} student just answered a ${subject} question.
-${isCorrect
-    ? `They got it RIGHT (answered ${studentAnswer}). Write a short enthusiastic English congratulation, mention one Swahili celebration phrase, and explain in 1 sentence WHY that answer is correct.`
-    : `They answered ${studentAnswer} but the correct answer was ${correctAnswer}. Write a kind English encouragement, mention one Swahili phrase, and explain the correct answer in 1 sentence.`}
-Start with the student's name: ${studentName}. Keep total under 220 characters.`;
+async function generateFeedback(questionBody, correctAnswer, studentAnswer, formLevel) {
+  const correctOption = correctAnswer.toUpperCase();
+  const prompt = `In one sentence, explain why ${correctOption} is the correct answer to this question: ${questionBody}. Keep it simple for a Form ${formLevel} student.`;
 
   try {
-    const response = await client.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 220,
-      messages: [{ role: 'user', content: 'Generate feedback now.' }],
-      system: systemPrompt,
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "x-api-key": process.env.ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model: "claude-haiku-4-5-20251001",
+        max_tokens: 120,
+        messages: [{ role: "user", content: prompt }]
+      })
     });
-    return response.content[0].text.trim();
+    const data = await response.json();
+    return data.content[0].text.trim();
   } catch (err) {
     console.error('Claude generateFeedback error:', err.message);
-    return isCorrect
-      ? `✅ Vizuri sana ${studentName}! Correct — the answer is ${correctAnswer}. Hongera! 🌟`
-      : `💪 Pole ${studentName}. The correct answer was ${correctAnswer}. Jaribu tena kesho!`;
+    return `Option ${correctAnswer} is correct for this ${formLevel}-level question.`;
   }
 }
 

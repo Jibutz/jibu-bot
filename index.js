@@ -249,12 +249,17 @@ async function processAnswer(student, answer, phone, channel) {
   });
 
   // Send feedback
-  const feedback = await generateFeedback(
-    student.Student_Name, isCorrect, answer, current.answer,
-    current.subject, student.Form_level
+  const explanation = await generateFeedback(
+    current.questionBody, current.answer, answer, student.Form_level
   );
-  const suffix = `\n\n📊 Streak: ${newStreak} | Points: ${newPoints} | ${newRank}`;
-  await send(phone, feedback + suffix);
+  const stats = `📊 Streak: ${newStreak} | Points: ${newPoints} | ${newRank}`;
+  let feedbackMsg;
+  if (isCorrect) {
+    feedbackMsg = `✅ Correct! The answer is ${current.answer}. Hongera! ⭐\n\n💡 Why: ${explanation}\n\n${stats}`;
+  } else {
+    feedbackMsg = `❌ Not quite! The correct answer was ${current.answer}.\n\n💡 Why: ${explanation}\n\nKeep going — you've got this! 💪\n${stats}`;
+  }
+  await send(phone, feedbackMsg);
 
   const milestone = checkMilestone(newStreak);
   if (milestone) {
