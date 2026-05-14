@@ -11,60 +11,38 @@ async function generateQuestion(student, subject) {
   const formLevel = student.Form_level || '4';
   const weakTopics = student.Weak_Topics || '';
 
-  const systemPrompt = `You are JIBU, a Tanzanian NECTA exam tutor. Generate exactly 1 multiple-choice question for a Form ${formLevel} student in the subject: ${subject}.
-${weakTopics ? `Prioritise their weak topic: ${weakTopics}.` : ''}
-
-You MUST respond in this exact format and nothing else:
-[Question text here — one sentence, exam style]
-A) [option]
-B) [option]
-C) [option]
-D) [option]
-ANSWER: [single letter A, B, C, or D]
-
-Rules:
-- Match real NECTA past paper style and difficulty
-- Question must be in English
-- Options must be distinct and plausible
-- No extra commentary, no preamble — only the format above`;
+  const userPrompt = `Generate one real multiple choice exam question for a Tanzania Form ${formLevel} student studying ${subject}.${weakTopics ? ` Focus on this weak topic: ${weakTopics}.` : ''} The question must be specific, factual, and exam-ready like a real NECTA past paper question. Give 4 real answer options A, B, C, D — not placeholders like Statement A. Return as JSON: {"questionBody": "...", "optionA": "...", "optionB": "...", "optionC": "...", "optionD": "...", "answer": "A"}`;
 
   try {
     const response = await client.messages.create({
       model: 'claude-haiku-4-5-20251001',
-      max_tokens: 300,
-      messages: [{ role: 'user', content: 'Generate the question now.' }],
-      system: systemPrompt,
+      max_tokens: 400,
+      messages: [{ role: 'user', content: userPrompt }],
     });
 
-    console.log(`📡 Claude API response for ${subject}:`, JSON.stringify(response.content));
-
     const text = (response.content[0] && response.content[0].text) ? response.content[0].text.trim() : '';
-    console.log(`📝 Raw text for ${subject}:\n${text}`);
+    console.log(`📝 Claude raw for ${subject}:\n${text}`);
 
-    if (!text) {
-      throw new Error('Empty response from Claude API');
-    }
+    if (!text) throw new Error('Empty response from Claude API');
 
-    const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
-    const answerLine = lines.find(l => l.toUpperCase().startsWith('ANSWER:'));
-    const answer = answerLine
-      ? answerLine.replace(/ANSWER:/i, '').trim().toUpperCase().charAt(0)
-      : 'A';
-    const questionBody = lines
-      .filter(l => !l.toUpperCase().startsWith('ANSWER:'))
-      .join('\n');
+    // Extract JSON — handle markdown code fences if present
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error('No JSON found in response');
 
-    console.log(`✅ Parsed ${subject} — answer: ${answer}, body: "${questionBody.slice(0, 60)}"`);
+    const parsed = JSON.parse(jsonMatch[0]);
+    const { questionBody, optionA, optionB, optionC, optionD, answer } = parsed;
 
-    if (!questionBody) {
-      throw new Error('Parsed empty questionBody');
-    }
+    if (!questionBody || !optionA) throw new Error('Incomplete JSON fields');
 
-    return { questionBody, answer };
+    const body = `${questionBody}\nA) ${optionA}\nB) ${optionB}\nC) ${optionC}\nD) ${optionD}`;
+    const ans = (answer || 'A').toUpperCase().charAt(0);
+
+    console.log(`✅ ${subject} — answer: ${ans}, q: "${questionBody.slice(0, 60)}"`);
+    return { questionBody: body, answer: ans };
   } catch (err) {
     console.error(`Claude generateQuestion error (${subject}):`, err.message);
     return {
-      questionBody: `Which of the following is true about ${subject} for Form ${formLevel}?\nA) Statement A\nB) Statement B\nC) Statement C\nD) Statement D`,
+      questionBody: `Which of the following best describes a key concept in ${subject}?\nA) First option\nB) Second option\nC) Third option\nD) Fourth option`,
       answer: 'A',
     };
   }
