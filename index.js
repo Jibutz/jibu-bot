@@ -81,11 +81,15 @@ app.post('/webhook/whatsapp', async (req, res) => {
       }
 
       if (text === 'SUBJECTS') {
-        await updateStudent(student.id, { Enrollment_Step: 3, Status: 'Enrolling' });
-        await sendWhatsApp(phone, t(student,
-          `Which subjects do you want to study? Pick from:\n\nMaths · Biology · Chemistry · Physics · English · Geography · History\n\nExample: Maths, Biology, Chemistry`,
-          `Unataka kusoma masomo gani? Chagua hapa:\n\nMaths · Biology · Chemistry · Physics · English · Geography · History\n\nMfano: Maths, Biology, Chemistry`
-        ));
+        await updateStudent(student.id, { Enrollment_Step: 30 });
+        await sendWhatsApp(phone,
+          `Which subjects do you want to study? Choose from:\n\n📐 Maths\n🔬 Biology\n⚗️ Chemistry\n🧪 Physics\n📖 English\n📚 History\n🌍 Geography\n\nType the subjects you want separated by commas!\nExample: Maths, Biology, Chemistry`
+        );
+        continue;
+      }
+
+      if (parseInt(student.Enrollment_Step) === 30) {
+        await handleSubjectUpdate(student, message.text?.body || '', phone, 'whatsapp');
         continue;
       }
 
@@ -134,11 +138,15 @@ app.post('/webhook/sms', async (req, res) => {
     }
 
     if (text === 'SUBJECTS') {
-      await updateStudent(student.id, { Enrollment_Step: 3, Status: 'Enrolling' });
-      await sendSMS(phone, t(student,
-        `Which subjects do you want to study? Pick from:\n\nMaths · Biology · Chemistry · Physics · English · Geography · History\n\nExample: Maths, Biology, Chemistry`,
-        `Unataka kusoma masomo gani? Chagua hapa:\n\nMaths · Biology · Chemistry · Physics · English · Geography · History\n\nMfano: Maths, Biology, Chemistry`
-      ));
+      await updateStudent(student.id, { Enrollment_Step: 30 });
+      await sendSMS(phone,
+        `Which subjects do you want to study? Choose from:\n\n📐 Maths\n🔬 Biology\n⚗️ Chemistry\n🧪 Physics\n📖 English\n📚 History\n🌍 Geography\n\nType the subjects you want separated by commas!\nExample: Maths, Biology, Chemistry`
+      );
+      return;
+    }
+
+    if (parseInt(student.Enrollment_Step) === 30) {
+      await handleSubjectUpdate(student, req.body.text.trim(), phone, 'sms');
       return;
     }
 
@@ -300,6 +308,27 @@ async function processAnswer(student, answer, phone, channel) {
       `🏁 Umekwisha leo, ${student.Student_Name}! Umejibu maswali yote ${queue.length}.\n\n📊 Leo: +${newPoints - (parseInt(student.Total_Points) || 0)} pts | Streak: siku ${newStreak}\n\nTutaonana kesho saa 10 jioni! 🌟`
     ));
   }
+}
+
+// ─── Subject Update Handler ───────────────────────────────────────────────────
+const VALID_SUBJECTS = ['Maths', 'Biology', 'Chemistry', 'Physics', 'English', 'History', 'Geography'];
+
+async function handleSubjectUpdate(student, rawText, phone, channel) {
+  const send = channel === 'SMS' ? sendSMS : sendWhatsApp;
+  const normalized = rawText.toLowerCase();
+  const matched = VALID_SUBJECTS.filter(s => normalized.includes(s.toLowerCase()));
+
+  if (!matched.length) {
+    await send(phone,
+      `I couldn't match any subjects! 🤔 Try again using names from this list:\n\nMaths · Biology · Chemistry · Physics · English · History · Geography\n\nExample: Maths, Biology`
+    );
+    return;
+  }
+
+  await updateStudent(student.id, { Subjects: matched.join(', '), Enrollment_Step: 5 });
+  await send(phone,
+    `Perfect! 🔥 Your subjects are updated to ${matched.join(', ')}. New questions start tomorrow!`
+  );
 }
 
 // ─── CRON: Daily Questions at 16:00 EAT (13:00 UTC) ─────────────────────────
