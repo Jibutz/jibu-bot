@@ -163,9 +163,9 @@ app.post('/webhook/payment', async (req, res) => {
 // ─── Answer Processing ────────────────────────────────────────────────────────
 async function processAnswer(student, answer, phone, channel) {
   const send = channel === 'SMS' ? sendSMS : sendWhatsApp;
-  const correct = (student.Todays_Correct_Answer || '').toUpperCase();
+  const raw = (student.Todays_Correct_Answer || '').trim();
 
-  if (!correct) {
+  if (!raw) {
     await send(phone, t(student,
       `No question yet for today! Come back at 4:00 PM. ⏰`,
       `Bado hakuna swali leo! Rudi saa 10 jioni. ⏰`
@@ -173,26 +173,59 @@ async function processAnswer(student, answer, phone, channel) {
     return;
   }
 
-  const isCorrect = answer === correct;
+  // Parse queue (JSON array) or fall back to legacy plain-string answer
+  let queue;
+  try {
+    queue = JSON.parse(raw);
+    if (!Array.isArray(queue)) throw new Error('not array');
+  } catch {
+    // Legacy: single-question mode
+    const isCorrect = answer === raw.toUpperCase().charAt(0);
+    const feedback = await generateFeedback(student.Student_Name, isCorrect, answer, raw, student.Subjects, student.Form_level);
+    await send(phone, feedback);
+    await updateStudent(student.id, { Todays_Correct_Answer: '' });
+    return;
+  }
+
+  // Find first unanswered question
+  const idx = queue.findIndex(q => !q.done);
+  if (idx === -1) {
+    await send(phone, t(student,
+      `You've already answered all today's questions! 🎉 See you tomorrow at 4 PM.`,
+      `Umekwisha jibu maswali yote leo! 🎉 Tutaonana kesho saa 10 jioni.`
+    ));
+    return;
+  }
+
+  const current = queue[idx];
+  const isCorrect = answer === current.answer.toUpperCase();
   const today = new Date().toISOString().split('T')[0];
 
+  // Update streak only once per day (on first question answered)
+  const alreadyAnsweredToday = (student.Last_Answer_Date === today);
   let newStreak = parseInt(student.Current_Streak) || 0;
   let newPoints = parseInt(student.Total_Points) || 0;
   let weakTopics = student.Weak_Topics || '';
   let strongTopics = student.Strong_Topics || '';
 
   if (isCorrect) {
-    newStreak += 1;
     newPoints += 10;
+    if (!alreadyAnsweredToday) newStreak += 1;
+    if (!strongTopics.includes(current.subject)) {
+      strongTopics = strongTopics ? `${strongTopics}, ${current.subject}` : current.subject;
+    }
   } else {
-    const subject = student.Subject || student.Subjects?.split(',')[0] || 'General';
-    if (!weakTopics.includes(subject)) {
-      weakTopics = weakTopics ? `${weakTopics}, ${subject}` : subject;
+    if (!weakTopics.includes(current.subject)) {
+      weakTopics = weakTopics ? `${weakTopics}, ${current.subject}` : current.subject;
     }
   }
 
   const longestStreak = Math.max(parseInt(student.Longest_Streak) || 0, newStreak);
   const newRank = getRankTitle(newStreak);
+
+  // Mark this question done
+  queue[idx].done = true;
+  const remaining = queue.filter(q => !q.done);
 
   await updateStudent(student.id, {
     Current_Streak: newStreak,
@@ -202,26 +235,37 @@ async function processAnswer(student, answer, phone, channel) {
     Rank_Title: newRank,
     Weak_Topics: weakTopics,
     Strong_Topics: strongTopics,
-    Todays_Correct_Answer: '',
+    Todays_Correct_Answer: remaining.length ? JSON.stringify(queue) : '',
   });
 
+  // Send feedback
   const feedback = await generateFeedback(
-    student.Student_Name,
-    isCorrect,
-    answer,
-    correct,
-    student.Subjects,
-    student.Form_level
+    student.Student_Name, isCorrect, answer, current.answer,
+    current.subject, student.Form_level
   );
-
   const suffix = `\n\n📊 Streak: ${newStreak} | Points: ${newPoints} | ${newRank}`;
   await send(phone, feedback + suffix);
 
   const milestone = checkMilestone(newStreak);
   if (milestone) {
-    const milestoneMsg = getMilestoneMessage(student.Student_Name, newStreak, newRank);
-    await send(phone, milestoneMsg);
-    await updateStudent(student.id, { Rank_Title: newRank });
+    await send(phone, getMilestoneMessage(student.Student_Name, newStreak, newRank));
+  }
+
+  // Send next question or completion message
+  if (remaining.length) {
+    await sleep(1000);
+    const next = remaining[0];
+    const nextIdx = queue.findIndex(q => q === next) + 1;
+    const total = queue.length;
+    const footer = t(student, `\n\nReply A, B, C or D!`, `\n\nJibu kwa A, B, C au D!`);
+    await send(phone, `📚 ${next.subject} — Question ${nextIdx} of ${total}\n\n${next.questionBody}${footer}`);
+  } else {
+    await sleep(500);
+    const correctCount = queue.filter(q => q.done && q.answer).length;
+    await send(phone, t(student,
+      `🏁 Done for today, ${student.Student_Name}! You answered all ${queue.length} questions.\n\n📊 Today: +${newPoints - (parseInt(student.Total_Points) || 0)} pts | Streak: ${newStreak} days\n\nSee you tomorrow at 4 PM! 🌟`,
+      `🏁 Umekwisha leo, ${student.Student_Name}! Umejibu maswali yote ${queue.length}.\n\n📊 Leo: +${newPoints - (parseInt(student.Total_Points) || 0)} pts | Streak: siku ${newStreak}\n\nTutaonana kesho saa 10 jioni! 🌟`
+    ));
   }
 }
 
@@ -241,17 +285,30 @@ cron.schedule('0 13 * * *', async () => {
 
 async function sendDailyQuestion(student) {
   try {
-    const { question, answer } = await generateQuestion(student);
-    await updateStudent(student.id, { Todays_Correct_Answer: answer });
+    const subjects = (student.Subjects || '').split(',').map(s => s.trim()).filter(Boolean);
+    if (!subjects.length) return;
+
+    const queue = [];
+    for (const subject of subjects) {
+      const { questionBody, answer } = await generateQuestion(student, subject);
+      queue.push({ subject, questionBody, answer, done: false });
+      await sleep(200);
+    }
+
+    await updateStudent(student.id, { Todays_Correct_Answer: JSON.stringify(queue) });
 
     const streak = student.Current_Streak || 0;
     const rank = student.Rank_Title || getRankTitle(streak);
-    const header = `🔥 Siku ${streak} | ${rank} | ${student.Student_Name}\n\n`;
-    const footer = `\n\nJibu kwa kutuma A, B, C au D`;
-    const fullMessage = header + question + footer;
-
     const send = student.Channel === 'SMS' ? sendSMS : sendWhatsApp;
-    await send(student.Student_Phone, fullMessage);
+
+    const header = t(student,
+      `🔥 Day ${streak} | ${rank} | ${student.Student_Name}\n\n`,
+      `🔥 Siku ${streak} | ${rank} | ${student.Student_Name}\n\n`
+    );
+    const first = queue[0];
+    const qNum = `📚 ${first.subject} — Question 1 of ${subjects.length}\n\n`;
+    const footer = t(student, `\n\nReply A, B, C or D!`, `\n\nJibu kwa A, B, C au D!`);
+    await send(student.Student_Phone, header + qNum + first.questionBody + footer);
   } catch (err) {
     console.error(`Error sending question to ${student.Student_Phone}:`, err);
   }
