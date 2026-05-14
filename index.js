@@ -300,8 +300,10 @@ async function sendDailyQuestion(student) {
 
     const queue = [];
     for (const subject of subjects) {
-      const { questionBody, answer } = await generateQuestion(student, subject);
-      console.log(`📚 Question for ${subject}: body="${questionBody?.slice(0,50)}" answer="${answer}"`);
+      const parsed = await generateQuestion(subject, student.Form_level || '4');
+      const questionBody = `${parsed.questionBody}\nA) ${parsed.optionA}\nB) ${parsed.optionB}\nC) ${parsed.optionC}\nD) ${parsed.optionD}`;
+      const answer = (parsed.answer || 'A').toUpperCase().charAt(0);
+      console.log(`📚 Question for ${subject}: answer="${answer}", q="${parsed.questionBody?.slice(0,60)}"`);
       queue.push({ subject, questionBody, answer, done: false });
       await sleep(200);
     }

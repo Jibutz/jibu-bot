@@ -7,45 +7,38 @@ const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
  * Returns { questionBody: string, answer: string }
  * questionBody is just the question text + A/B/C/D options, no header/footer.
  */
-async function generateQuestion(student, subject) {
-  const formLevel = student.Form_level || '4';
-  const weakTopics = student.Weak_Topics || '';
+async function generateQuestion(subject, formLevel) {
+  const prompt = `You are a Tanzania NECTA exam question generator. Generate ONE real multiple choice question for Form ${formLevel} ${subject}.
 
-  const userPrompt = `Generate one real multiple choice exam question for a Tanzania Form ${formLevel} student studying ${subject}.${weakTopics ? ` Focus on this weak topic: ${weakTopics}.` : ''} The question must be specific, factual, and exam-ready like a real NECTA past paper question. Give 4 real answer options A, B, C, D — not placeholders like Statement A. Return as JSON: {"questionBody": "...", "optionA": "...", "optionB": "...", "optionC": "...", "optionD": "...", "answer": "A"}`;
+Rules:
+- Real specific question, not generic
+- 4 real answer options, not placeholders
+- Respond ONLY with valid JSON, nothing else
 
-  try {
-    const response = await client.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 400,
-      messages: [{ role: 'user', content: userPrompt }],
-    });
+Example format:
+{"questionBody":"What is the chemical formula for water?","optionA":"H2O","optionB":"CO2","optionC":"NaCl","optionD":"O2","answer":"A"}
 
-    const text = (response.content[0] && response.content[0].text) ? response.content[0].text.trim() : '';
-    console.log(`📝 Claude raw for ${subject}:\n${text}`);
+Now generate a question for Form ${formLevel} ${subject}:`;
 
-    if (!text) throw new Error('Empty response from Claude API');
+  const response = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "x-api-key": process.env.ANTHROPIC_API_KEY,
+      "anthropic-version": "2023-06-01",
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      model: "claude-haiku-4-5-20251001",
+      max_tokens: 300,
+      messages: [{ role: "user", content: prompt }]
+    })
+  });
 
-    // Extract JSON — handle markdown code fences if present
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) throw new Error('No JSON found in response');
-
-    const parsed = JSON.parse(jsonMatch[0]);
-    const { questionBody, optionA, optionB, optionC, optionD, answer } = parsed;
-
-    if (!questionBody || !optionA) throw new Error('Incomplete JSON fields');
-
-    const body = `${questionBody}\nA) ${optionA}\nB) ${optionB}\nC) ${optionC}\nD) ${optionD}`;
-    const ans = (answer || 'A').toUpperCase().charAt(0);
-
-    console.log(`✅ ${subject} — answer: ${ans}, q: "${questionBody.slice(0, 60)}"`);
-    return { questionBody: body, answer: ans };
-  } catch (err) {
-    console.error(`Claude generateQuestion error (${subject}):`, err.message);
-    return {
-      questionBody: `Which of the following best describes a key concept in ${subject}?\nA) First option\nB) Second option\nC) Third option\nD) Fourth option`,
-      answer: 'A',
-    };
-  }
+  const data = await response.json();
+  console.log("Claude raw response:", JSON.stringify(data));
+  const text = data.content[0].text;
+  console.log("Claude text:", text);
+  return JSON.parse(text);
 }
 
 /**
