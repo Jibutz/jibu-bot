@@ -21,7 +21,7 @@ async function enrollmentFlow(phone, message, student, channel) {
       extra: { Status: 'Enrolling' },
     });
     await send(phone,
-      `🔥 Welcome to JIBU — Tanzania's smartest AI study partner!\n\nQuick question — who's joining today? 👇\n\n1️⃣  I'm a Student\n2️⃣  I'm a Parent (Mzazi)\n\nReply 1 or 2!`
+      `Karibu JIBU! 🎓\n\nMimi ni mwalimu wako wa AI atakayekusaidia kufaulu mitihani ya NECTA! 🇹🇿\n\nHere is what we will do together:\n📚 Every day I send you real exam questions for your subjects\n✅ You answer A, B, C or D\n🏆 You earn points, build streaks and climb the ranks\n📈 The more you practice, the better your NECTA results!\n\n7 days FREE — no payment needed to start!\n\nSo let's go — are you a student or parent?\nReply *1* for Mwanafunzi 👨‍🎓\nReply *2* for Mzazi 👨‍👩‍👧`
     );
     return;
   }
