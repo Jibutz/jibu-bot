@@ -75,7 +75,7 @@ app.post('/webhook/whatsapp', async (req, res) => {
         continue;
       }
 
-      if (text === 'TEST') {
+      if (text === 'TEST' || text === 'TESTQUESTION') {
         await sendDailyQuestion(student);
         continue;
       }
@@ -119,7 +119,7 @@ app.post('/webhook/sms', async (req, res) => {
       return;
     }
 
-    if (text === 'TEST') {
+    if (text === 'TEST' || text === 'TESTQUESTION') {
       await sendDailyQuestion(student);
       return;
     }
