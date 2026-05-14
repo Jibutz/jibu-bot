@@ -38,7 +38,8 @@ Now generate a question for Form ${formLevel} ${subject}:`;
   console.log("Claude raw response:", JSON.stringify(data));
   const text = data.content[0].text;
   console.log("Claude text:", text);
-  return JSON.parse(text);
+  const cleaned = text.replace(/```json/g, '').replace(/```/g, '').trim();
+  return JSON.parse(cleaned);
 }
 
 /**
