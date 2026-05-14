@@ -75,6 +75,11 @@ app.post('/webhook/whatsapp', async (req, res) => {
         continue;
       }
 
+      if (text === 'TEST') {
+        await sendDailyQuestion(student);
+        continue;
+      }
+
       if (['A', 'B', 'C', 'D'].includes(text)) {
         await processAnswer(student, text, phone, 'whatsapp');
         continue;
@@ -111,6 +116,11 @@ app.post('/webhook/sms', async (req, res) => {
 
     if (!student) {
       await enrollmentFlow(phone, text, null, 'sms');
+      return;
+    }
+
+    if (text === 'TEST') {
+      await sendDailyQuestion(student);
       return;
     }
 
