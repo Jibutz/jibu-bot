@@ -80,6 +80,15 @@ app.post('/webhook/whatsapp', async (req, res) => {
         continue;
       }
 
+      if (text === 'SUBJECTS') {
+        await updateStudent(student.id, { Enrollment_Step: 3, Status: 'Enrolling' });
+        await sendWhatsApp(phone, t(student,
+          `Which subjects do you want to study? Pick from:\n\nMaths · Biology · Chemistry · Physics · English · Geography · History\n\nExample: Maths, Biology, Chemistry`,
+          `Unataka kusoma masomo gani? Chagua hapa:\n\nMaths · Biology · Chemistry · Physics · English · Geography · History\n\nMfano: Maths, Biology, Chemistry`
+        ));
+        continue;
+      }
+
       if (['A', 'B', 'C', 'D'].includes(text)) {
         await processAnswer(student, text, phone, 'whatsapp');
         continue;
@@ -121,6 +130,15 @@ app.post('/webhook/sms', async (req, res) => {
 
     if (text === 'TEST' || text === 'TESTQUESTION') {
       await sendDailyQuestion(student);
+      return;
+    }
+
+    if (text === 'SUBJECTS') {
+      await updateStudent(student.id, { Enrollment_Step: 3, Status: 'Enrolling' });
+      await sendSMS(phone, t(student,
+        `Which subjects do you want to study? Pick from:\n\nMaths · Biology · Chemistry · Physics · English · Geography · History\n\nExample: Maths, Biology, Chemistry`,
+        `Unataka kusoma masomo gani? Chagua hapa:\n\nMaths · Biology · Chemistry · Physics · English · Geography · History\n\nMfano: Maths, Biology, Chemistry`
+      ));
       return;
     }
 
