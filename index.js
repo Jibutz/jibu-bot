@@ -11,7 +11,7 @@ const { airtable, getStudentByPhone, createStudent, updateStudent, getAllActiveS
 const { sendWhatsApp } = require('./whatsapp');
 const { sendSMS } = require('./sms');
 const { createPaymentLink, verifyPayment } = require('./payments');
-const { generateQuestion, generateFeedback, generateParentReport } = require('./claude');
+const { generateQuestion, generateFeedback, generateReexplanation, generateParentReport } = require('./claude');
 const { getRankTitle, checkMilestone, getMilestoneMessage } = require('./ranks');
 const { enrollmentFlow } = require('./enrollment');
 const { handleNectaResults } = require('./necta');
@@ -49,7 +49,8 @@ app.post('/webhook/whatsapp', async (req, res) => {
     for (const message of messages) {
       if (message.type !== 'text') continue;
       const phone = message.from;
-      const text = (message.text?.body || '').trim().toUpperCase();
+      const rawText = (message.text?.body || '').trim();
+      const text = rawText.toUpperCase();
 
       if (text.startsWith('JIBU MATOKEO')) {
         await handleNectaResults(phone, text, 'whatsapp');
@@ -93,6 +94,11 @@ app.post('/webhook/whatsapp', async (req, res) => {
         continue;
       }
 
+      if (isChallengeMessage(rawText)) {
+        await handleChallenge(student, phone, 'whatsapp');
+        continue;
+      }
+
       if (['A', 'B', 'C', 'D'].includes(text)) {
         await processAnswer(student, text, phone, 'whatsapp');
         continue;
@@ -118,7 +124,8 @@ app.post('/webhook/sms', async (req, res) => {
   res.sendStatus(200);
   try {
     const phone = req.body.from;
-    const text = (req.body.text || '').trim().toUpperCase();
+    const rawText = (req.body.text || '').trim();
+    const text = rawText.toUpperCase();
 
     if (text.startsWith('JIBU MATOKEO')) {
       await handleNectaResults(phone, text, 'sms');
@@ -146,7 +153,12 @@ app.post('/webhook/sms', async (req, res) => {
     }
 
     if (parseInt(student.Enrollment_Step) === 30) {
-      await handleSubjectUpdate(student, req.body.text.trim(), phone, 'sms');
+      await handleSubjectUpdate(student, rawText, phone, 'sms');
+      return;
+    }
+
+    if (isChallengeMessage(rawText)) {
+      await handleChallenge(student, phone, 'sms');
       return;
     }
 
@@ -272,6 +284,7 @@ async function processAnswer(student, answer, phone, channel) {
     Weak_Topics: weakTopics,
     Strong_Topics: strongTopics,
     Todays_Correct_Answer: remaining.length ? JSON.stringify(queue) : '',
+    Last_Question: JSON.stringify({ questionBody: current.questionBody, answer: current.answer, subject: current.subject, formLevel: student.Form_level || '4' }),
   });
 
   // Send feedback
@@ -308,6 +321,30 @@ async function processAnswer(student, answer, phone, channel) {
       `🏁 Umekwisha leo, ${student.Student_Name}! Umejibu maswali yote ${queue.length}.\n\n📊 Leo: +${newPoints - (parseInt(student.Total_Points) || 0)} pts | Streak: siku ${newStreak}\n\nTutaonana kesho saa 10 jioni! 🌟`
     ));
   }
+}
+
+// ─── Challenge / Re-explanation Handler ──────────────────────────────────────
+const CHALLENGE_WORDS = ['wrong', 'disagree', 'how', 'explain', 'why', 'not right', "sure?", "really?", "i don't understand", "don't understand", "dont understand"];
+
+function isChallengeMessage(raw) {
+  const lower = raw.toLowerCase();
+  return CHALLENGE_WORDS.some(w => lower.includes(w));
+}
+
+async function handleChallenge(student, phone, channel) {
+  const send = channel === 'SMS' ? sendSMS : sendWhatsApp;
+  const raw = student.Last_Question;
+  if (!raw) {
+    await send(phone, t(student,
+      `No recent question to re-explain! Answer today's question first, then ask me if you disagree. 😊`,
+      `Hakuna swali la hivi karibuni! Jibu swali la leo kwanza, kisha niulize. 😊`
+    ));
+    return;
+  }
+  let lastQuestion;
+  try { lastQuestion = JSON.parse(raw); } catch { return; }
+  const reexplanation = await generateReexplanation(lastQuestion);
+  await send(phone, reexplanation);
 }
 
 // ─── Subject Update Handler ───────────────────────────────────────────────────

@@ -72,6 +72,53 @@ async function generateFeedback(questionBody, correctAnswer, studentAnswer, form
 }
 
 /**
+ * Re-explain a question answer using a completely different approach.
+ */
+async function generateReexplanation(lastQuestion) {
+  const { questionBody, answer, subject, formLevel } = lastQuestion;
+  const subjectLower = (subject || '').toLowerCase();
+  const isMaths = subjectLower.includes('maths') || subjectLower.includes('math');
+  const isScience = ['biology', 'chemistry', 'physics'].some(s => subjectLower.includes(s));
+
+  const approach = isMaths
+    ? 'Show the full step-by-step working to prove why this answer is correct. Use numbered steps.'
+    : isScience
+    ? 'Use a real-life example or analogy that a student would relate to in Tanzania.'
+    : 'Explain using a completely different angle or method than a textbook would use.';
+
+  const prompt = `A Form ${formLevel} student challenged this answer. Re-explain it using a DIFFERENT approach than before.
+
+Question: ${questionBody}
+Correct answer: ${answer}
+Subject: ${subject}
+
+${approach}
+
+Start by politely acknowledging their challenge (1 short sentence). Then give the re-explanation. End with a kind, confident closing. Keep total response under 320 characters.`;
+
+  try {
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "x-api-key": process.env.ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model: "claude-haiku-4-5-20251001",
+        max_tokens: 350,
+        messages: [{ role: "user", content: prompt }]
+      })
+    });
+    const data = await response.json();
+    return data.content[0].text.trim();
+  } catch (err) {
+    console.error('Claude generateReexplanation error:', err.message);
+    return `Great question to challenge! 💪 The correct answer is still ${answer}. Try re-reading the question carefully and you'll see why. You've got this!`;
+  }
+}
+
+/**
  * Generate weekly parent report.
  */
 async function generateParentReport(student) {
@@ -100,4 +147,4 @@ Write in English. Open with a warm Swahili greeting. 3-4 sentences, encouraging 
   }
 }
 
-module.exports = { generateQuestion, generateFeedback, generateParentReport };
+module.exports = { generateQuestion, generateFeedback, generateReexplanation, generateParentReport };
