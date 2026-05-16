@@ -178,4 +178,61 @@ Write in English. Open with a warm Swahili greeting. 3-4 sentences, encouraging 
   }
 }
 
-module.exports = { generateQuestion, generateFeedback, generateReexplanation, generateParentReport };
+/**
+ * Answer a student's free-text help question.
+ */
+async function generateHelpAnswer(question, subjects, formLevel) {
+  const prompt = `You are JIBU, a friendly Tanzania NECTA exam tutor. A Form ${formLevel} student studying ${subjects} needs help with: ${question}. Give a clear helpful answer in simple English with a Swahili word or two for warmth. Keep it under 5 sentences.`;
+  try {
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "x-api-key": process.env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01", "Content-Type": "application/json" },
+      body: JSON.stringify({ model: "claude-haiku-4-5-20251001", max_tokens: 300, messages: [{ role: "user", content: prompt }] })
+    });
+    const data = await response.json();
+    return data.content[0].text.trim();
+  } catch (err) {
+    console.error('Claude generateHelpAnswer error:', err.message);
+    return `Great question! For ${subjects} at Form ${formLevel}, I recommend reviewing your textbook notes and practising past paper questions. Jaribu tena — keep trying! 💪`;
+  }
+}
+
+/**
+ * Generate a weekly learning summary for the student.
+ */
+async function generateWeeklySummary(student) {
+  const prompt = `Write a warm encouraging weekly learning summary for a Tanzania Form ${student.Form_level || '4'} student named ${student.Student_Name} who studied ${student.Subjects || 'their subjects'} this week. Reference what topics these subjects typically cover at this form level. Mention their streak of ${student.Current_Streak || 0} days and ${student.Total_Points || 0} points. Give one specific study tip for their weakest subject (${student.Weak_Topics || 'general study skills'}). Keep it under 150 words. Use simple English with occasional Swahili for warmth.`;
+  try {
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "x-api-key": process.env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01", "Content-Type": "application/json" },
+      body: JSON.stringify({ model: "claude-haiku-4-5-20251001", max_tokens: 350, messages: [{ role: "user", content: prompt }] })
+    });
+    const data = await response.json();
+    return data.content[0].text.trim();
+  } catch (err) {
+    console.error('Claude generateWeeklySummary error:', err.message);
+    return `Habari ${student.Student_Name}! 🎓 Great week of studying! Your streak is at ${student.Current_Streak || 0} days and you have ${student.Total_Points || 0} points. Keep practising daily — consistency is the key to NECTA success! Endelea! 💪`;
+  }
+}
+
+/**
+ * Generate a personalised stats summary for MYSTATS command.
+ */
+async function generateMyStats(student) {
+  const prompt = `Write a motivating personal stats summary for a Tanzania student named ${student.Student_Name} studying ${student.Subjects || 'their subjects'} at Form ${student.Form_level || '4'}. Their stats are: streak ${student.Current_Streak || 0} days, total points ${student.Total_Points || 0}, rank title ${student.Rank_Title || 'Mwanafunzi'}. Give one specific encouragement and one study tip. Keep it under 100 words. Use simple English with occasional Swahili.`;
+  try {
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "x-api-key": process.env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01", "Content-Type": "application/json" },
+      body: JSON.stringify({ model: "claude-haiku-4-5-20251001", max_tokens: 250, messages: [{ role: "user", content: prompt }] })
+    });
+    const data = await response.json();
+    return data.content[0].text.trim();
+  } catch (err) {
+    console.error('Claude generateMyStats error:', err.message);
+    return `You are doing great ${student.Student_Name}! Keep answering daily to build your streak and climb the rankings. Jitahidi — every question makes you stronger! 💪`;
+  }
+}
+
+module.exports = { generateQuestion, generateFeedback, generateReexplanation, generateHelpAnswer, generateWeeklySummary, generateMyStats, generateParentReport };

@@ -65,10 +65,9 @@ async function enrollmentFlow(phone, message, student, channel) {
     case 1: {
       const name = capitalizeWords(msg);
       await updateStudent(student.id, { Student_Name: name, Enrollment_Step: 2 });
-      await send(phone, t(student,
-        `Nice to meet you, ${name}! 🤝🔥\n\nWhat Form are you in? Reply with just the number:\n\n1 · 2 · 3 · 4 · 5 · 6`,
-        `Karibu sana, ${name}! 🤝🔥\n\nUko kidato gani sasa hivi? Jibu kwa namba tu:\n\n1 · 2 · 3 · 4 · 5 · 6`
-      ));
+      await send(phone,
+        `Welcome ${name}! 🎓 Great to have you on JIBU!\n\nHere is how JIBU works:\n\n📚 Every day at 4 PM I send you real NECTA exam questions for your subjects\n✅ Reply A, B, C or D to answer\n💡 After every answer I explain why — right or wrong\n🔥 Build your streak by answering every day\n🏆 Earn points and climb the Tanzania rankings!\n\nUseful commands anytime:\n❓ HELP — get assistance with anything\n📖 SUBJECTS — change your subjects\n📊 MYSTATS — see your performance\n🤔 EXPLAIN — get a deeper explanation\n⚔️ WRONG — challenge my answer\n\n7 days FREE to start — no payment needed!\n\nLet's build your NECTA success together! 🇹🇿\n\nNow let's get you set up — what Form are you in? Reply 1, 2, 3, 4, 5 or 6`
+      );
       break;
     }
 
@@ -76,10 +75,9 @@ async function enrollmentFlow(phone, message, student, channel) {
     case 11: {
       const name = capitalizeWords(msg);
       await updateStudent(student.id, { Student_Name: name, Enrollment_Step: 2 });
-      await send(phone, t(student,
-        `Great name! 💪 ${name} is going to ace NECTA!\n\nWhat Form is ${name} in? Reply with the number:\n\n1 · 2 · 3 · 4 · 5 · 6`,
-        `Jina zuri kabisa! 💪 ${name} atafaulu NECTA hakika!\n\n${name} yuko kidato gani? Jibu kwa namba:\n\n1 · 2 · 3 · 4 · 5 · 6`
-      ));
+      await send(phone,
+        `Welcome ${name} to JIBU! 🎓 Great to have you on board!\n\nHere is how JIBU works:\n\n📚 Every day at 4 PM I send real NECTA exam questions\n✅ Reply A, B, C or D to answer\n💡 After every answer I explain why — right or wrong\n🔥 Build your streak by answering every day\n🏆 Earn points and climb the Tanzania rankings!\n\nUseful commands anytime:\n❓ HELP — get assistance with anything\n📖 SUBJECTS — change your subjects\n📊 MYSTATS — see your performance\n\n7 days FREE to start — no payment needed!\n\nLet's build NECTA success together! 🇹🇿\n\nWhat Form is ${name} in? Reply 1, 2, 3, 4, 5 or 6`
+      );
       break;
     }
 

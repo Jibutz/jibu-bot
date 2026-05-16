@@ -11,7 +11,7 @@ const { airtable, getStudentByPhone, createStudent, updateStudent, getAllActiveS
 const { sendWhatsApp } = require('./whatsapp');
 const { sendSMS } = require('./sms');
 const { createPaymentLink, verifyPayment } = require('./payments');
-const { generateQuestion, generateFeedback, generateReexplanation, generateParentReport } = require('./claude');
+const { generateQuestion, generateFeedback, generateReexplanation, generateHelpAnswer, generateWeeklySummary, generateMyStats, generateParentReport } = require('./claude');
 const { getRankTitle, checkMilestone, getMilestoneMessage } = require('./ranks');
 const { enrollmentFlow } = require('./enrollment');
 const { handleNectaResults } = require('./necta');
@@ -89,8 +89,26 @@ app.post('/webhook/whatsapp', async (req, res) => {
         continue;
       }
 
+      if (text === 'HELP') {
+        await updateStudent(student.id, { Enrollment_Step: 31 });
+        await sendWhatsApp(phone,
+          `Hey ${student.Student_Name}! 👋 I am here to help!\n\nWhat do you need help with? Just tell me in your own words — for example:\n\n💬 "I don't understand photosynthesis"\n💬 "How do I solve quadratic equations"\n💬 "What topics should I focus on for NECTA"\n💬 "I want to change my subjects"\n💬 "How does JIBU work"\n\nJust type your question and I will help you! 🎓`
+        );
+        continue;
+      }
+
+      if (text === 'MYSTATS') {
+        await handleMyStats(student, phone, 'whatsapp');
+        continue;
+      }
+
       if (parseInt(student.Enrollment_Step) === 30) {
         await handleSubjectUpdate(student, message.text?.body || '', phone, 'whatsapp');
+        continue;
+      }
+
+      if (parseInt(student.Enrollment_Step) === 31) {
+        await handleHelpQuestion(student, rawText, phone, 'whatsapp');
         continue;
       }
 
@@ -152,8 +170,26 @@ app.post('/webhook/sms', async (req, res) => {
       return;
     }
 
+    if (text === 'HELP') {
+      await updateStudent(student.id, { Enrollment_Step: 31 });
+      await sendSMS(phone,
+        `Hey ${student.Student_Name}! 👋 I am here to help!\n\nWhat do you need help with? Just tell me in your own words — for example:\n\n"I don't understand photosynthesis"\n"How do I solve quadratic equations"\n"What topics should I focus on for NECTA"\n\nJust type your question and I will help you! 🎓`
+      );
+      return;
+    }
+
+    if (text === 'MYSTATS') {
+      await handleMyStats(student, phone, 'sms');
+      return;
+    }
+
     if (parseInt(student.Enrollment_Step) === 30) {
       await handleSubjectUpdate(student, rawText, phone, 'sms');
+      return;
+    }
+
+    if (parseInt(student.Enrollment_Step) === 31) {
+      await handleHelpQuestion(student, rawText, phone, 'sms');
       return;
     }
 
@@ -323,6 +359,26 @@ async function processAnswer(student, answer, phone, channel) {
   }
 }
 
+// ─── Help Question Handler ────────────────────────────────────────────────────
+async function handleHelpQuestion(student, question, phone, channel) {
+  const send = channel === 'SMS' ? sendSMS : sendWhatsApp;
+  const answer = await generateHelpAnswer(question, student.Subjects || 'their subjects', student.Form_level || '4');
+  await updateStudent(student.id, { Enrollment_Step: 5 });
+  await send(phone, `🎓 ${answer}\n\nSend HELP anytime you need me! 💪`);
+}
+
+// ─── MYSTATS Handler ──────────────────────────────────────────────────────────
+async function handleMyStats(student, phone, channel) {
+  const send = channel === 'SMS' ? sendSMS : sendWhatsApp;
+  const summary = await generateMyStats(student);
+  const streak = student.Current_Streak || 0;
+  const points = student.Total_Points || 0;
+  const rank = student.Rank_Title || 'Mwanafunzi';
+  await send(phone,
+    `📊 Your JIBU Stats ${student.Student_Name}!\n\n${summary}\n\n🔥 Streak: ${streak} days\n⭐ Total Points: ${points}\n🏆 Rank: ${rank}\n\nKeep going — NECTA unakimbiza! 💪🇹🇿`
+  );
+}
+
 // ─── Challenge / Re-explanation Handler ──────────────────────────────────────
 const CHALLENGE_WORDS = ['wrong', 'disagree', 'how', 'explain', 'why', 'not right', "sure?", "really?", "i don't understand", "don't understand", "dont understand"];
 
@@ -467,6 +523,26 @@ cron.schedule('0 6 * * 0', async () => {
     }
   } catch (err) {
     console.error('Parent reports cron error:', err);
+  }
+}, { timezone: 'UTC' });
+
+// ─── CRON: Weekly Student Summaries Sunday 09:00 EAT (06:00 UTC) ─────────────
+cron.schedule('0 6 * * 0', async () => {
+  console.log('📊 Sending weekly student summaries...');
+  try {
+    const students = await getAllActiveStudents();
+    for (const student of students) {
+      try {
+        const summary = await generateWeeklySummary(student);
+        const send = student.Channel === 'SMS' ? sendSMS : sendWhatsApp;
+        await send(student.Student_Phone, `📚 Your Weekly JIBU Summary!\n\n${summary}\n\n🔥 Streak: ${student.Current_Streak || 0} days | ⭐ Points: ${student.Total_Points || 0}\n\nKaa imara — NECTA inakuja! 💪🇹🇿`);
+        await sleep(500);
+      } catch (err) {
+        console.error(`Weekly summary error for ${student.Student_Phone}:`, err.message);
+      }
+    }
+  } catch (err) {
+    console.error('Weekly student summaries cron error:', err);
   }
 }, { timezone: 'UTC' });
 
