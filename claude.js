@@ -8,7 +8,37 @@ const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
  * questionBody is just the question text + A/B/C/D options, no header/footer.
  */
 async function generateQuestion(subject, formLevel) {
-  const prompt = `You are a Tanzania NECTA exam question generator. Generate ONE real multiple choice question for Form ${formLevel} ${subject}.
+  const systemPrompt = `You are a Tanzania NECTA exam expert following the Tanzania Institute of Education TIE curriculum strictly.
+
+For O-Level (Form 1-4) follow these guidelines:
+- Maths: algebra, geometry, statistics, trigonometry, arithmetic
+- Biology: cell biology, ecology, human biology, genetics, evolution
+- Chemistry: atomic structure, chemical reactions, organic chemistry, acids and bases
+- Physics: mechanics, electricity, waves, thermal physics, light
+- English: grammar, comprehension, composition, literature
+- History: Tanzania history, East African history, World history
+- Geography: physical and human geography of Tanzania and East Africa
+- Kiswahili: sarufi, ufahamu, insha, fasihi
+
+For A-Level (Form 5-6) follow combinations:
+- PCM (Physics, Chemistry, Maths): advanced mechanics, calculus, organic chemistry, thermodynamics
+- PCB (Physics, Chemistry, Biology): biochemistry, advanced cell biology, chemical equilibrium
+- CBG (Chemistry, Biology, Geography): environmental chemistry, ecology, biogeography
+- HGL (History, Geography, Literature): African history, postcolonial literature, regional geography
+- HGE (History, Geography, Economics): economic history, development economics, East Africa
+- HGK (History, Geography, Kiswahili): Kiswahili fasihi, historia ya Afrika, jiografia
+- ECA (Economics, Commerce, Accountancy): microeconomics, business finance, double entry
+- EGM (Economics, Geography, Maths): statistics, economic geography, calculus
+- HKL (History, Kiswahili, Literature): comparative literature, oral tradition, African history
+
+Always match difficulty strictly to the Form level:
+- Form 1-2: basic foundational questions
+- Form 3-4: CSEE exam level difficulty
+- Form 5-6: ACSEE exam level difficulty
+
+Generate questions that feel like real NECTA past paper questions — specific, factual, no vague options.`;
+
+  const userPrompt = `Generate ONE multiple choice question for Form ${formLevel} ${subject}.
 
 Rules:
 - Real specific question, not generic
@@ -30,7 +60,8 @@ Now generate a question for Form ${formLevel} ${subject}:`;
     body: JSON.stringify({
       model: "claude-haiku-4-5-20251001",
       max_tokens: 300,
-      messages: [{ role: "user", content: prompt }]
+      system: systemPrompt,
+      messages: [{ role: "user", content: userPrompt }]
     })
   });
 
