@@ -67,7 +67,14 @@ app.post('/webhook/whatsapp', async (req, res) => {
         continue;
       }
 
-      // Language preference toggle
+      // ── Enrollment takes absolute priority ──────────────────────────────────
+      const step = parseInt(student.Enrollment_Step) || 0;
+      if (student.Status === 'Enrolling' || (step >= 1 && step <= 5)) {
+        await enrollmentFlow(phone, text, student, 'whatsapp');
+        continue;
+      }
+
+      // ── Language preference toggle ───────────────────────────────────────────
       if (text === 'SWAHILI' || text === 'NIAMBIE KWA KISWAHILI') {
         await updateStudent(student.id, { Language_Pref: 'sw' });
         await sendWhatsApp(phone, `Got it! 🇹🇿 Nitaongea nawe kwa Kiswahili zaidi from now on. Send "English" anytime to switch back.`);
@@ -79,6 +86,7 @@ app.post('/webhook/whatsapp', async (req, res) => {
         continue;
       }
 
+      // ── Explicit commands ────────────────────────────────────────────────────
       if (text === 'TEST' || text === 'TESTQUESTION') {
         await sendDailyQuestion(student);
         continue;
@@ -105,28 +113,25 @@ app.post('/webhook/whatsapp', async (req, res) => {
         continue;
       }
 
-      if (parseInt(student.Enrollment_Step) === 30) {
+      // ── Pending step handlers ────────────────────────────────────────────────
+      if (step === 30) {
         await handleSubjectUpdate(student, message.text?.body || '', phone, 'whatsapp');
         continue;
       }
 
-      if (parseInt(student.Enrollment_Step) === 31) {
+      if (step === 31) {
         await handleHelpQuestion(student, rawText, phone, 'whatsapp');
         continue;
       }
 
-      if (isChallengeMessage(rawText)) {
-        await handleChallenge(student, phone, 'whatsapp');
-        continue;
-      }
-
+      // ── Answer and smart fallback ────────────────────────────────────────────
       if (['A', 'B', 'C', 'D'].includes(text)) {
         await processAnswer(student, text, phone, 'whatsapp');
         continue;
       }
 
-      if (student.Status === 'Enrolling') {
-        await enrollmentFlow(phone, text, student, 'whatsapp');
+      if (isChallengeMessage(rawText)) {
+        await handleChallenge(student, phone, 'whatsapp');
         continue;
       }
 
@@ -157,6 +162,14 @@ app.post('/webhook/sms', async (req, res) => {
       return;
     }
 
+    // ── Enrollment takes absolute priority ──────────────────────────────────
+    const step = parseInt(student.Enrollment_Step) || 0;
+    if (student.Status === 'Enrolling' || (step >= 1 && step <= 5)) {
+      await enrollmentFlow(phone, text, student, 'sms');
+      return;
+    }
+
+    // ── Explicit commands ────────────────────────────────────────────────────
     if (text === 'TEST' || text === 'TESTQUESTION') {
       await sendDailyQuestion(student);
       return;
@@ -183,28 +196,25 @@ app.post('/webhook/sms', async (req, res) => {
       return;
     }
 
-    if (parseInt(student.Enrollment_Step) === 30) {
+    // ── Pending step handlers ────────────────────────────────────────────────
+    if (step === 30) {
       await handleSubjectUpdate(student, rawText, phone, 'sms');
       return;
     }
 
-    if (parseInt(student.Enrollment_Step) === 31) {
+    if (step === 31) {
       await handleHelpQuestion(student, rawText, phone, 'sms');
       return;
     }
 
-    if (isChallengeMessage(rawText)) {
-      await handleChallenge(student, phone, 'sms');
-      return;
-    }
-
+    // ── Answer and smart fallback ────────────────────────────────────────────
     if (['A', 'B', 'C', 'D'].includes(text)) {
       await processAnswer(student, text, phone, 'sms');
       return;
     }
 
-    if (student.Status === 'Enrolling') {
-      await enrollmentFlow(phone, text, student, 'sms');
+    if (isChallengeMessage(rawText)) {
+      await handleChallenge(student, phone, 'sms');
       return;
     }
 
