@@ -67,40 +67,11 @@ app.post('/webhook/whatsapp', async (req, res) => {
         continue;
       }
 
-      // ── Enrollment takes absolute priority ──────────────────────────────────
+      const msg = rawText.trim().toUpperCase();
       const step = parseInt(student.Enrollment_Step) || 0;
-      if (student.Status === 'Enrolling' || (step >= 1 && step <= 5)) {
-        await enrollmentFlow(phone, text, student, 'whatsapp');
-        continue;
-      }
 
-      // ── Language preference toggle ───────────────────────────────────────────
-      if (text === 'SWAHILI' || text === 'NIAMBIE KWA KISWAHILI') {
-        await updateStudent(student.id, { Language_Pref: 'sw' });
-        await sendWhatsApp(phone, `Got it! 🇹🇿 Nitaongea nawe kwa Kiswahili zaidi from now on. Send "English" anytime to switch back.`);
-        continue;
-      }
-      if (text === 'ENGLISH') {
-        await updateStudent(student.id, { Language_Pref: 'en' });
-        await sendWhatsApp(phone, `Got it! 🇬🇧 Switching to English mode. Send "Swahili" anytime to switch.`);
-        continue;
-      }
-
-      // ── Explicit commands ────────────────────────────────────────────────────
-      if (text === 'TEST' || text === 'TESTQUESTION') {
-        await sendDailyQuestion(student);
-        continue;
-      }
-
-      if (text === 'SUBJECTS') {
-        await updateStudent(student.id, { Enrollment_Step: 30 });
-        await sendWhatsApp(phone,
-          `Which subjects do you want to study? Choose from:\n\n📐 Maths\n🔬 Biology\n⚗️ Chemistry\n🧪 Physics\n📖 English\n📚 History\n🌍 Geography\n\nType the subjects you want separated by commas!\nExample: Maths, Biology, Chemistry`
-        );
-        continue;
-      }
-
-      if (text === 'HELP') {
+      // 1. Commands first — always recognised regardless of enrolment state
+      if (msg === 'HELP') {
         await updateStudent(student.id, { Enrollment_Step: 31 });
         await sendWhatsApp(phone,
           `Hey ${student.Student_Name}! 👋 I am here to help!\n\nWhat do you need help with? Just tell me in your own words — for example:\n\n💬 "I don't understand photosynthesis"\n💬 "How do I solve quadratic equations"\n💬 "What topics should I focus on for NECTA"\n💬 "I want to change my subjects"\n💬 "How does JIBU work"\n\nJust type your question and I will help you! 🎓`
@@ -108,14 +79,50 @@ app.post('/webhook/whatsapp', async (req, res) => {
         continue;
       }
 
-      if (text === 'MYSTATS') {
+      if (msg === 'MYSTATS') {
         await handleMyStats(student, phone, 'whatsapp');
         continue;
       }
 
-      // ── Pending step handlers ────────────────────────────────────────────────
+      if (msg === 'SUBJECTS') {
+        await updateStudent(student.id, { Enrollment_Step: 30 });
+        await sendWhatsApp(phone,
+          `Which subjects do you want to study? Choose from:\n\n📐 Maths\n🔬 Biology\n⚗️ Chemistry\n🧪 Physics\n📖 English\n📚 History\n🌍 Geography\n\nType the subjects you want separated by commas!\nExample: Maths, Biology, Chemistry`
+        );
+        continue;
+      }
+
+      if (msg === 'TEST' || msg === 'TESTQUESTION') {
+        await sendDailyQuestion(student);
+        continue;
+      }
+
+      if (msg === 'WRONG' || msg === 'EXPLAIN') {
+        await handleChallenge(student, phone, 'whatsapp');
+        continue;
+      }
+
+      if (msg === 'SWAHILI' || msg === 'NIAMBIE KWA KISWAHILI') {
+        await updateStudent(student.id, { Language_Pref: 'sw' });
+        await sendWhatsApp(phone, `Got it! 🇹🇿 Nitaongea nawe kwa Kiswahili zaidi. Send "English" anytime to switch back.`);
+        continue;
+      }
+
+      if (msg === 'ENGLISH') {
+        await updateStudent(student.id, { Language_Pref: 'en' });
+        await sendWhatsApp(phone, `Got it! 🇬🇧 Switching to English mode. Send "Swahili" anytime to switch.`);
+        continue;
+      }
+
+      // 2. A/B/C/D answer
+      if (['A', 'B', 'C', 'D'].includes(msg)) {
+        await processAnswer(student, msg, phone, 'whatsapp');
+        continue;
+      }
+
+      // 3. Pending step handlers (subject update, awaiting help question)
       if (step === 30) {
-        await handleSubjectUpdate(student, message.text?.body || '', phone, 'whatsapp');
+        await handleSubjectUpdate(student, rawText, phone, 'whatsapp');
         continue;
       }
 
@@ -124,17 +131,13 @@ app.post('/webhook/whatsapp', async (req, res) => {
         continue;
       }
 
-      // ── Answer and smart fallback ────────────────────────────────────────────
-      if (['A', 'B', 'C', 'D'].includes(text)) {
-        await processAnswer(student, text, phone, 'whatsapp');
+      // 4. Enrollment in progress (Status-based, not step-range)
+      if (student.Status === 'Enrolling') {
+        await enrollmentFlow(phone, rawText, student, 'whatsapp');
         continue;
       }
 
-      if (isChallengeMessage(rawText)) {
-        await handleChallenge(student, phone, 'whatsapp');
-        continue;
-      }
-
+      // 5. Smart help fallback — anything else goes to Claude
       await handleHelpQuestion(student, rawText, phone, 'whatsapp');
     }
   } catch (err) {
@@ -162,28 +165,11 @@ app.post('/webhook/sms', async (req, res) => {
       return;
     }
 
-    // ── Enrollment takes absolute priority ──────────────────────────────────
+    const msg = rawText.trim().toUpperCase();
     const step = parseInt(student.Enrollment_Step) || 0;
-    if (student.Status === 'Enrolling' || (step >= 1 && step <= 5)) {
-      await enrollmentFlow(phone, text, student, 'sms');
-      return;
-    }
 
-    // ── Explicit commands ────────────────────────────────────────────────────
-    if (text === 'TEST' || text === 'TESTQUESTION') {
-      await sendDailyQuestion(student);
-      return;
-    }
-
-    if (text === 'SUBJECTS') {
-      await updateStudent(student.id, { Enrollment_Step: 30 });
-      await sendSMS(phone,
-        `Which subjects do you want to study? Choose from:\n\n📐 Maths\n🔬 Biology\n⚗️ Chemistry\n🧪 Physics\n📖 English\n📚 History\n🌍 Geography\n\nType the subjects you want separated by commas!\nExample: Maths, Biology, Chemistry`
-      );
-      return;
-    }
-
-    if (text === 'HELP') {
+    // 1. Commands first
+    if (msg === 'HELP') {
       await updateStudent(student.id, { Enrollment_Step: 31 });
       await sendSMS(phone,
         `Hey ${student.Student_Name}! 👋 I am here to help!\n\nWhat do you need help with? Just tell me in your own words — for example:\n\n"I don't understand photosynthesis"\n"How do I solve quadratic equations"\n"What topics should I focus on for NECTA"\n\nJust type your question and I will help you! 🎓`
@@ -191,12 +177,36 @@ app.post('/webhook/sms', async (req, res) => {
       return;
     }
 
-    if (text === 'MYSTATS') {
+    if (msg === 'MYSTATS') {
       await handleMyStats(student, phone, 'sms');
       return;
     }
 
-    // ── Pending step handlers ────────────────────────────────────────────────
+    if (msg === 'SUBJECTS') {
+      await updateStudent(student.id, { Enrollment_Step: 30 });
+      await sendSMS(phone,
+        `Which subjects do you want to study? Choose from:\n\n📐 Maths\n🔬 Biology\n⚗️ Chemistry\n🧪 Physics\n📖 English\n📚 History\n🌍 Geography\n\nType the subjects you want separated by commas!\nExample: Maths, Biology, Chemistry`
+      );
+      return;
+    }
+
+    if (msg === 'TEST' || msg === 'TESTQUESTION') {
+      await sendDailyQuestion(student);
+      return;
+    }
+
+    if (msg === 'WRONG' || msg === 'EXPLAIN') {
+      await handleChallenge(student, phone, 'sms');
+      return;
+    }
+
+    // 2. A/B/C/D answer
+    if (['A', 'B', 'C', 'D'].includes(msg)) {
+      await processAnswer(student, msg, phone, 'sms');
+      return;
+    }
+
+    // 3. Pending step handlers
     if (step === 30) {
       await handleSubjectUpdate(student, rawText, phone, 'sms');
       return;
@@ -207,17 +217,13 @@ app.post('/webhook/sms', async (req, res) => {
       return;
     }
 
-    // ── Answer and smart fallback ────────────────────────────────────────────
-    if (['A', 'B', 'C', 'D'].includes(text)) {
-      await processAnswer(student, text, phone, 'sms');
+    // 4. Enrollment in progress
+    if (student.Status === 'Enrolling') {
+      await enrollmentFlow(phone, rawText, student, 'sms');
       return;
     }
 
-    if (isChallengeMessage(rawText)) {
-      await handleChallenge(student, phone, 'sms');
-      return;
-    }
-
+    // 5. Smart help fallback
     await handleHelpQuestion(student, rawText, phone, 'sms');
   } catch (err) {
     console.error('SMS webhook error:', err);
