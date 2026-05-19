@@ -36,6 +36,11 @@ app.get('/', (req, res) => {
   res.json({ status: 'JIBU bot is running 🎓', time: new Date().toISOString() });
 });
 
+// ─── Privacy Policy ───────────────────────────────────────────────────────────
+app.get('/privacy', (req, res) => {
+  res.sendFile(__dirname + '/privacy.html');
+});
+
 // ─── WhatsApp Webhook Verification (Meta Cloud API) ──────────────────────────
 app.get('/webhook/whatsapp', (req, res) => {
   const mode = req.query['hub.mode'];
