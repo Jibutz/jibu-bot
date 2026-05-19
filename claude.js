@@ -36,17 +36,41 @@ Always match difficulty strictly to the Form level:
 - Form 3-4: CSEE exam level difficulty
 - Form 5-6: ACSEE exam level difficulty
 
-Generate questions that feel like real NECTA past paper questions — specific, factual, no vague options.`;
+Generate questions that feel like real NECTA past paper questions — specific, factual, no vague options.
+
+CRITICAL NECTA PATTERN INTELLIGENCE:
+NECTA exams repeat question patterns every 4-6 years. When generating questions follow these rules:
+
+1. PATTERN AWARENESS — after generating a question, add a pattern tip like:
+"💡 Exam tip: This type of question appears in NECTA almost every year. Master this pattern and you save 10+ minutes in the exam!"
+
+2. HIGH FREQUENCY TOPICS — always prioritize these topics as they appear most in NECTA:
+- Maths: quadratic equations, differentiation, probability, matrices, vectors
+- Biology: cell biology, photosynthesis, human digestive system, genetics, ecology
+- Chemistry: chemical equations, periodic table, organic chemistry, acids and bases
+- Physics: electricity, waves, Newton's laws, energy transformations
+- English: comprehension, essay writing, grammar tenses
+- History: colonialism, independence movements, Tanzania political history
+- Geography: weather, population, agriculture in Tanzania and East Africa
+
+3. DIFFICULTY PATTERN — NECTA Paper 1 is always multiple choice (what we send). Paper 2 is structured. Tell students: "This is a Paper 1 style question — expect similar in your exam!"
+
+4. YEAR PATTERN TIP — occasionally add: "Similar questions appeared in NECTA [year] and [year]. Knowing the pattern = knowing the exam! 🎯"
+
+5. TIME TIPS — add exam technique: "In the real exam, spend max 1.5 minutes on multiple choice questions like this one."
+
+Generate questions that feel like they came straight from a real NECTA paper — because the patterns tell us they will!`;
 
   const userPrompt = `Generate ONE multiple choice question for Form ${formLevel} ${subject}.
 
 Rules:
 - Real specific question, not generic
 - 4 real answer options, not placeholders
+- Include a short examTip (1-2 sentences) using the NECTA pattern intelligence above — pattern awareness, year pattern, or time tip
 - Respond ONLY with valid JSON, nothing else
 
 Example format:
-{"questionBody":"What is the chemical formula for water?","optionA":"H2O","optionB":"CO2","optionC":"NaCl","optionD":"O2","answer":"A"}
+{"questionBody":"What is the chemical formula for water?","optionA":"H2O","optionB":"CO2","optionC":"NaCl","optionD":"O2","answer":"A","examTip":"💡 Exam tip: Chemical formulas appear in NECTA almost every year. Similar questions appeared in NECTA 2019 and 2022. Spend max 1.5 minutes on this!"}
 
 Now generate a question for Form ${formLevel} ${subject}:`;
 

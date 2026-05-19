@@ -448,7 +448,8 @@ async function sendDailyQuestion(student) {
     for (const subject of subjects) {
       for (let i = 0; i < 3; i++) {
         const parsed = await generateQuestion(subject, formLevel);
-        const questionBody = `${parsed.questionBody}\nA) ${parsed.optionA}\nB) ${parsed.optionB}\nC) ${parsed.optionC}\nD) ${parsed.optionD}`;
+        const tip = parsed.examTip ? `\n\n${parsed.examTip}` : '';
+        const questionBody = `${parsed.questionBody}\nA) ${parsed.optionA}\nB) ${parsed.optionB}\nC) ${parsed.optionC}\nD) ${parsed.optionD}${tip}`;
         const answer = (parsed.answer || 'A').toUpperCase().charAt(0);
         console.log(`📚 ${subject} Q${i+1}: answer="${answer}", q="${parsed.questionBody?.slice(0,60)}"`);
         queue.push({ subject, questionBody, answer, done: false });
