@@ -54,6 +54,7 @@ app.post('/webhook/whatsapp', async (req, res) => {
       const phone = message.from;
       const rawText = (message.text?.body || '').trim();
       const text = rawText.toUpperCase();
+      console.log('Received message:', JSON.stringify(rawText));
 
       if (text.startsWith('JIBU MATOKEO')) {
         await handleNectaResults(phone, text, 'whatsapp');
@@ -152,6 +153,7 @@ app.post('/webhook/sms', async (req, res) => {
     const phone = req.body.from;
     const rawText = (req.body.text || '').trim();
     const text = rawText.toUpperCase();
+    console.log('Received SMS:', JSON.stringify(rawText));
 
     if (text.startsWith('JIBU MATOKEO')) {
       await handleNectaResults(phone, text, 'sms');

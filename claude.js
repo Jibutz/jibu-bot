@@ -162,6 +162,7 @@ Start by politely acknowledging their challenge (1 short sentence). Then give th
       body: JSON.stringify({
         model: "claude-haiku-4-5-20251001",
         max_tokens: 350,
+        system: JIBU_SYSTEM,
         messages: [{ role: "user", content: prompt }]
       })
     });
@@ -205,13 +206,15 @@ Write in English. Open with a warm Swahili greeting. 3-4 sentences, encouraging 
 /**
  * Answer a student's free-text help question.
  */
+const JIBU_SYSTEM = `You are JIBU, a Tanzania NECTA exam tutor. You are an expert in ALL Tanzania secondary school subjects including: Maths, Biology, Chemistry, Physics, English, Geography, History, Kiswahili, Literature, Economics, Commerce, Accountancy, and all A-Level combinations (PCM, PCB, CBG, HGL, HGE, HGK, ECA, EGM, HKL). You cover both O-Level (Form 1-4) and A-Level (Form 5-6). Never say you do not cover a subject — you cover all Tanzania NECTA subjects.`;
+
 async function generateHelpAnswer(question, subjects, formLevel) {
-  const prompt = `You are JIBU, a friendly Tanzania NECTA exam tutor. A Form ${formLevel} student studying ${subjects} needs help with: ${question}. Give a clear helpful answer in simple English with a Swahili word or two for warmth. Keep it under 5 sentences.`;
+  const prompt = `A Form ${formLevel} student studying ${subjects} needs help with: ${question}. Give a clear helpful answer in simple English with a Swahili word or two for warmth. Keep it under 5 sentences.`;
   try {
     const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: { "x-api-key": process.env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01", "Content-Type": "application/json" },
-      body: JSON.stringify({ model: "claude-haiku-4-5-20251001", max_tokens: 300, messages: [{ role: "user", content: prompt }] })
+      body: JSON.stringify({ model: "claude-haiku-4-5-20251001", max_tokens: 300, system: JIBU_SYSTEM, messages: [{ role: "user", content: prompt }] })
     });
     const data = await response.json();
     return data.content[0].text.trim();
@@ -230,7 +233,7 @@ async function generateWeeklySummary(student) {
     const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: { "x-api-key": process.env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01", "Content-Type": "application/json" },
-      body: JSON.stringify({ model: "claude-haiku-4-5-20251001", max_tokens: 350, messages: [{ role: "user", content: prompt }] })
+      body: JSON.stringify({ model: "claude-haiku-4-5-20251001", max_tokens: 350, system: JIBU_SYSTEM, messages: [{ role: "user", content: prompt }] })
     });
     const data = await response.json();
     return data.content[0].text.trim();
@@ -249,7 +252,7 @@ async function generateMyStats(student) {
     const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: { "x-api-key": process.env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01", "Content-Type": "application/json" },
-      body: JSON.stringify({ model: "claude-haiku-4-5-20251001", max_tokens: 250, messages: [{ role: "user", content: prompt }] })
+      body: JSON.stringify({ model: "claude-haiku-4-5-20251001", max_tokens: 250, system: JIBU_SYSTEM, messages: [{ role: "user", content: prompt }] })
     });
     const data = await response.json();
     return data.content[0].text.trim();
