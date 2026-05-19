@@ -127,10 +127,7 @@ app.post('/webhook/whatsapp', async (req, res) => {
         continue;
       }
 
-      await sendWhatsApp(phone, t(student,
-        `Hey! 👋 Reply A, B, C or D after you get your daily question. Need help? Send HELP!`,
-        `Habari! 👋 Jibu kwa A, B, C au D ukipata swali lako la leo. Msaada? Tuma HELP!`
-      ));
+      await handleHelpQuestion(student, rawText, phone, 'whatsapp');
     }
   } catch (err) {
     console.error('WhatsApp webhook error:', err);
@@ -207,6 +204,8 @@ app.post('/webhook/sms', async (req, res) => {
       await enrollmentFlow(phone, text, student, 'sms');
       return;
     }
+
+    await handleHelpQuestion(student, rawText, phone, 'sms');
   } catch (err) {
     console.error('SMS webhook error:', err);
   }
@@ -362,9 +361,10 @@ async function processAnswer(student, answer, phone, channel) {
 // ─── Help Question Handler ────────────────────────────────────────────────────
 async function handleHelpQuestion(student, question, phone, channel) {
   const send = channel === 'SMS' ? sendSMS : sendWhatsApp;
-  const answer = await generateHelpAnswer(question, student.Subjects || 'their subjects', student.Form_level || '4');
+  const raw = await generateHelpAnswer(question, student.Subjects || 'their subjects', student.Form_level || '4');
+  const cleanHelp = raw.replace(/[#*_]/g, '').trim();
   await updateStudent(student.id, { Enrollment_Step: 5 });
-  await send(phone, `🎓 ${answer}\n\nSend HELP anytime you need me! 💪`);
+  await send(phone, `🎓 ${cleanHelp}\n\nSend HELP anytime you need me! 💪`);
 }
 
 // ─── MYSTATS Handler ──────────────────────────────────────────────────────────
