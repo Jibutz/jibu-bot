@@ -3,6 +3,9 @@ const express = require('express');
 const cron = require('node-cron');
 const Anthropic = require('@anthropic-ai/sdk');
 
+process.on('uncaughtException', (err) => console.error('Uncaught error:', err));
+process.on('unhandledRejection', (err) => console.error('Unhandled rejection:', err));
+
 const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
