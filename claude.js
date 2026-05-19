@@ -262,4 +262,26 @@ async function generateMyStats(student) {
   }
 }
 
-module.exports = { generateQuestion, generateFeedback, generateReexplanation, generateHelpAnswer, generateWeeklySummary, generateMyStats, generateParentReport };
+/**
+ * Generate 5 NECTA-style MCQ questions for the Saturday quiz.
+ * Returns an array of { questionBody, optionA, optionB, optionC, optionD, answer }.
+ */
+async function generateSaturdayQuiz(subject, formLevel) {
+  const prompt = `Generate 5 quick multiple choice questions for a Tanzania Form ${formLevel} student studying ${subject}. Make them exam-style NECTA questions. Return as JSON array with questionBody, optionA, optionB, optionC, optionD, answer for each.`;
+  try {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 1200, messages: [{ role: 'user', content: prompt }] }),
+    });
+    const data = await response.json();
+    const text = data.content[0].text;
+    const cleaned = text.replace(/```json/g, '').replace(/```/g, '').trim();
+    return JSON.parse(cleaned);
+  } catch (err) {
+    console.error('Claude generateSaturdayQuiz error:', err.message);
+    return null;
+  }
+}
+
+module.exports = { generateQuestion, generateFeedback, generateReexplanation, generateHelpAnswer, generateWeeklySummary, generateMyStats, generateParentReport, generateSaturdayQuiz };

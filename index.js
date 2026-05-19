@@ -14,13 +14,22 @@ const { airtable, getStudentByPhone, createStudent, updateStudent, getAllActiveS
 const { sendWhatsApp } = require('./whatsapp');
 const { sendSMS } = require('./sms');
 const { createPaymentLink, verifyPayment } = require('./payments');
-const { generateQuestion, generateFeedback, generateReexplanation, generateHelpAnswer, generateWeeklySummary, generateMyStats, generateParentReport } = require('./claude');
+const { generateQuestion, generateFeedback, generateReexplanation, generateHelpAnswer, generateWeeklySummary, generateMyStats, generateParentReport, generateSaturdayQuiz } = require('./claude');
 const { getRankTitle, checkMilestone, getMilestoneMessage } = require('./ranks');
-const { enrollmentFlow } = require('./enrollment');
+const { enrollmentFlow, PRICING } = require('./enrollment');
 const { handleNectaResults } = require('./necta');
 const { t } = require('./lang');
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+const PLAN_MESSAGE = `⏰ Jaribio lako linaisha! Your 3-day free trial is ending!\n\nChoose your plan to keep learning:\n\n1️⃣ Wiki Pass — 1,500 TZS (7 days)\n   Perfect for exam week! 📅\n\n2️⃣ Mwezi Pack — 5,000 TZS (30 days)\n   Most popular! 🔥\n\n3️⃣ Muhula Pass — 12,000 TZS (1 full term)\n   Best value — save 3,000 TZS! 💰\n\n4️⃣ Mwaka Pack — 30,000 TZS (full year)\n   Ultimate saving — save 30,000 TZS! 🏆\n\nReply 1, 2, 3 or 4 to choose!\nThen send your M-Pesa confirmation number.\n\nAu jibu moja kwa moja — just reply your choice!`;
+
+const PLAN_MAP = {
+  '1': { name: 'Wiki Pass',   price: 1500,  days: 7   },
+  '2': { name: 'Mwezi Pack',  price: 5000,  days: 30  },
+  '3': { name: 'Muhula Pass', price: 12000, days: 90  },
+  '4': { name: 'Mwaka Pack',  price: 30000, days: 365 },
+};
 
 // ─── Health Check ────────────────────────────────────────────────────────────
 app.get('/', (req, res) => {
@@ -115,13 +124,36 @@ app.post('/webhook/whatsapp', async (req, res) => {
         continue;
       }
 
-      // 2. A/B/C/D answer
+      // 2. PAY command
+      if (msg === 'PAY') {
+        await updateStudent(student.id, { Enrollment_Step: 40 });
+        await sendWhatsApp(phone, PLAN_MESSAGE);
+        continue;
+      }
+
+      // 3. Saturday quiz answer format (e.g. "1A 2B 3C 4D 5A")
+      if (isSaturdayAnswerFormat(msg) && student.Saturday_Answers) {
+        await handleSaturdayAnswers(student, msg, phone, 'whatsapp');
+        continue;
+      }
+
+      // 4. A/B/C/D answer
       if (['A', 'B', 'C', 'D'].includes(msg)) {
         await processAnswer(student, msg, phone, 'whatsapp');
         continue;
       }
 
-      // 3. Pending step handlers (subject update, awaiting help question)
+      // 5. Pending step handlers
+      if (step === 40) {
+        await handlePlanSelection(student, msg, phone, 'whatsapp');
+        continue;
+      }
+
+      if (step === 41) {
+        await handlePaymentConfirmation(student, rawText, phone, 'whatsapp');
+        continue;
+      }
+
       if (step === 30) {
         await handleSubjectUpdate(student, rawText, phone, 'whatsapp');
         continue;
@@ -202,13 +234,36 @@ app.post('/webhook/sms', async (req, res) => {
       return;
     }
 
-    // 2. A/B/C/D answer
+    // 2. PAY command
+    if (msg === 'PAY') {
+      await updateStudent(student.id, { Enrollment_Step: 40 });
+      await sendSMS(phone, PLAN_MESSAGE);
+      return;
+    }
+
+    // 3. Saturday quiz answer format (e.g. "1A 2B 3C 4D 5A")
+    if (isSaturdayAnswerFormat(msg) && student.Saturday_Answers) {
+      await handleSaturdayAnswers(student, msg, phone, 'sms');
+      return;
+    }
+
+    // 4. A/B/C/D answer
     if (['A', 'B', 'C', 'D'].includes(msg)) {
       await processAnswer(student, msg, phone, 'sms');
       return;
     }
 
-    // 3. Pending step handlers
+    // 5. Pending step handlers
+    if (step === 40) {
+      await handlePlanSelection(student, msg, phone, 'sms');
+      return;
+    }
+
+    if (step === 41) {
+      await handlePaymentConfirmation(student, rawText, phone, 'sms');
+      return;
+    }
+
     if (step === 30) {
       await handleSubjectUpdate(student, rawText, phone, 'sms');
       return;
@@ -243,15 +298,17 @@ app.post('/webhook/payment', async (req, res) => {
     if (!student) return;
 
     const now = new Date();
+    const planName = student.Payment_Plan || 'Mwezi Pack';
+    const planEntry = Object.values(PLAN_MAP).find(p => p.name === planName) || PLAN_MAP['2'];
     const nextPayment = new Date(now);
-    nextPayment.setMonth(nextPayment.getMonth() + 1);
+    nextPayment.setDate(nextPayment.getDate() + planEntry.days);
 
     await updateStudent(student.id, {
       Status: 'Active',
       Trial_Status: 'Paid',
       Subscription_Starts: now.toISOString().split('T')[0],
       Next_Payment_Date: nextPayment.toISOString().split('T')[0],
-      Payment_Amount: 5000,
+      Payment_Amount: planEntry.price,
     });
 
     const send = student.Channel === 'SMS' ? sendSMS : sendWhatsApp;
@@ -454,6 +511,14 @@ cron.schedule('0 13 * * *', async () => {
       await sendDailyQuestion(student);
       await sleep(500);
     }
+    // Send 1 teaser question to trial-expired (Paused) students
+    const pausedStudents = await getAllActiveStudents(['Paused']);
+    for (const student of pausedStudents) {
+      if (student.Trial_Status === 'Trial_Expired') {
+        await sendTeaserQuestion(student);
+        await sleep(500);
+      }
+    }
   } catch (err) {
     console.error('Daily questions cron error:', err);
   }
@@ -579,11 +644,8 @@ cron.schedule('0 6 * * *', async () => {
       const send = student.Channel === 'SMS' ? sendSMS : sendWhatsApp;
 
       if (student.Status === 'Trial' && student.Trial_End_Date === today) {
-        const payLink = await createPaymentLink(student.Student_Phone, 5000, `JIBU subscription - ${student.Student_Name}`);
-        await send(student.Student_Phone, t(student,
-          `⏰ ${student.Student_Name}, your 7-day free trial ends today! Your streak is at ${student.Current_Streak} days — don't lose it!\n\nContinue for just TZS 5,000/month:\n${payLink}\n\nPay today to keep your streak alive! 🔥`,
-          `⏰ ${student.Student_Name}, siku 7 za JIBU zimekwisha! Streak yako ni siku ${student.Current_Streak} — usiipoteze!\n\nEndelea kwa TZS 5,000 tu kwa mwezi:\n${payLink}\n\nLipa leo streak yako iendelee! 🔥`
-        ));
+        await updateStudent(student.id, { Enrollment_Step: 40 });
+        await send(student.Student_Phone, PLAN_MESSAGE);
       }
 
       if (student.Status === 'Trial' && student.Trial_Status !== 'Paid') {
@@ -593,8 +655,8 @@ cron.schedule('0 6 * * *', async () => {
         if (new Date() > graceEnd) {
           await updateStudent(student.id, { Status: 'Paused', Trial_Status: 'Trial_Expired' });
           await send(student.Student_Phone, t(student,
-            `😔 ${student.Student_Name}, JIBU is paused — payment overdue. Pay TZS 5,000 to get back in. Your ${student.Current_Streak}-day streak is waiting! 💪`,
-            `😔 ${student.Student_Name}, JIBU imesimamishwa kwa sababu ya malipo. Lipa TZS 5,000 kuendelea. Streak yako ya siku ${student.Current_Streak} inakusubiri! 💪`
+            `😔 ${student.Student_Name}, JIBU is paused. Reply PAY to choose a plan and keep learning! Your ${student.Current_Streak}-day streak is waiting! 💪`,
+            `😔 ${student.Student_Name}, JIBU imesimamishwa. Jibu PAY kuchagua mpango wako uendelee! Streak yako ya siku ${student.Current_Streak} inakusubiri! 💪`
           ));
         }
       }
@@ -622,6 +684,167 @@ cron.schedule('0 6 * * *', async () => {
     console.error('Trial/payment check error:', err);
   }
 }, { timezone: 'UTC' });
+
+// ─── Plan Selection Handler (step 40) ────────────────────────────────────────
+async function handlePlanSelection(student, msg, phone, channel) {
+  const send = channel === 'SMS' ? sendSMS : sendWhatsApp;
+  const plan = PLAN_MAP[msg];
+  if (!plan) {
+    await send(phone, `Please reply 1, 2, 3 or 4 to choose your plan:\n\n1️⃣ Wiki Pass — 1,500 TZS (7 days)\n2️⃣ Mwezi Pack — 5,000 TZS (30 days)\n3️⃣ Muhula Pass — 12,000 TZS (90 days)\n4️⃣ Mwaka Pack — 30,000 TZS (365 days)`);
+    return;
+  }
+  const expiry = new Date();
+  expiry.setDate(expiry.getDate() + plan.days);
+  const expiryDate = expiry.toISOString().split('T')[0];
+  await updateStudent(student.id, {
+    Payment_Plan: plan.name,
+    Next_Payment_Date: expiryDate,
+    Enrollment_Step: 41,
+  });
+  await send(phone, `✅ Great choice! ${plan.name} — TZS ${plan.price.toLocaleString()} for ${plan.days} days.\n\nNow send your M-Pesa confirmation number to activate your plan.\n\nExample: AB123C45`);
+}
+
+// ─── Payment Confirmation Handler (step 41) ───────────────────────────────────
+async function handlePaymentConfirmation(student, rawText, phone, channel) {
+  const send = channel === 'SMS' ? sendSMS : sendWhatsApp;
+  const ref = rawText.trim();
+  await updateStudent(student.id, {
+    Status: 'Active',
+    Trial_Status: 'Paid',
+    Payment_Reference: ref,
+    Subscription_Starts: new Date().toISOString().split('T')[0],
+    Enrollment_Step: 5,
+  });
+  await send(phone, t(student,
+    `✅ Thank you, ${student.Student_Name}! Reference ${ref} received.\n\nYou're now on ${student.Payment_Plan || 'your plan'}! 🎉\nYour questions continue — streak is safe! 🔥\n\nJibu maswali kila siku! 💪🇹🇿`,
+    `✅ Asante ${student.Student_Name}! Namba ${ref} imepokelewa.\n\nUme-activate ${student.Payment_Plan || 'mpango wako'}! 🎉\nMaswali yanaendelea — streak iko salama! 🔥\n\nJibu maswali kila siku! 💪🇹🇿`
+  ));
+}
+
+// ─── Saturday Quiz Format Detector ───────────────────────────────────────────
+function isSaturdayAnswerFormat(msg) {
+  return /^(\d[A-D])(\s+\d[A-D]){4}$/i.test(msg.trim());
+}
+
+// ─── Saturday Quiz Answer Handler ────────────────────────────────────────────
+async function handleSaturdayAnswers(student, msg, phone, channel) {
+  const send = channel === 'SMS' ? sendSMS : sendWhatsApp;
+  let quizData;
+  try {
+    quizData = JSON.parse(student.Saturday_Answers);
+  } catch {
+    await send(phone, t(student, `No Saturday quiz found! Wait for next Saturday. 📅`, `Hakuna mtihani wa Jumamosi! Subiri Jumamosi ijayo. 📅`));
+    return;
+  }
+  if (quizData.graded) {
+    await send(phone, t(student, `You already submitted your Saturday answers! 🎉 Wait for next Saturday.`, `Umetuma majibu tayari! 🎉 Subiri Jumamosi ijayo.`));
+    return;
+  }
+
+  const parts = msg.trim().toUpperCase().split(/\s+/);
+  const studentAnswers = {};
+  for (const part of parts) {
+    const num = parseInt(part[0]);
+    const letter = part[1];
+    if (num >= 1 && num <= 5 && 'ABCD'.includes(letter)) {
+      studentAnswers[num] = letter;
+    }
+  }
+
+  const questions = quizData.questions;
+  let score = 0;
+  let corrections = '';
+  for (let i = 0; i < questions.length; i++) {
+    const qNum = i + 1;
+    const correct = questions[i].answer.toUpperCase().charAt(0);
+    const given = studentAnswers[qNum];
+    if (given === correct) {
+      score++;
+    } else {
+      corrections += `\n❌ Q${qNum}: Correct answer is ${correct} — ${questions[i].questionBody}`;
+    }
+  }
+
+  await updateStudent(student.id, {
+    Saturday_Answers: JSON.stringify({ ...quizData, studentAnswers, graded: true, score }),
+  });
+
+  let reply = `🎯 Saturday Results!\n\nScore: ${score}/5 `;
+  if (score === 5) reply += '🏆 Perfect! Umefaulu kabisa!';
+  else if (score >= 3) reply += '✅ Good job! Hongera!';
+  else reply += '💪 Keep practising! Jaribu tena!';
+  if (corrections) reply += `\n\nCorrections:${corrections}`;
+  reply += `\n\nSee you next Saturday! 🇹🇿`;
+
+  await send(phone, reply);
+}
+
+// ─── Send Saturday Quiz ───────────────────────────────────────────────────────
+async function sendSaturdayQuiz(student) {
+  try {
+    const subjects = (student.Subjects || '').split(',').map(s => s.trim()).filter(Boolean);
+    if (!subjects.length) return;
+    const subject = subjects[0];
+    const formLevel = student.Form_level || '4';
+
+    const questions = await generateSaturdayQuiz(subject, formLevel);
+    if (!questions || !questions.length) return;
+
+    await updateStudent(student.id, {
+      Saturday_Answers: JSON.stringify({ questions, graded: false }),
+    });
+
+    let msg = `🎯 JIBU Saturday Challenge!\nMtihani wa Jumamosi — test yourself!\n\nThis week's bonus quiz for Form ${formLevel} ${subject}:\n\n`;
+    questions.forEach((q, i) => {
+      msg += `Q${i + 1}: ${q.questionBody}\nA) ${q.optionA}  B) ${q.optionB}  C) ${q.optionC}  D) ${q.optionD}\n\n`;
+    });
+    msg += `Reply with your 5 answers like this:\nExample: 1A 2B 3C 4D 5A\n\nGood luck! Jitahidi! 💪🇹🇿`;
+
+    const send = student.Channel === 'SMS' ? sendSMS : sendWhatsApp;
+    await send(student.Student_Phone, msg);
+  } catch (err) {
+    console.error(`Saturday quiz error for ${student.Student_Phone}:`, err);
+  }
+}
+
+// ─── CRON: Saturday Quiz at 09:00 EAT (06:00 UTC) ────────────────────────────
+cron.schedule('0 6 * * 6', async () => {
+  console.log('🎯 Sending Saturday quiz...');
+  try {
+    const students = await getAllActiveStudents(['Active', 'Trial']);
+    for (const student of students) {
+      await sendSaturdayQuiz(student);
+      await sleep(1000);
+    }
+  } catch (err) {
+    console.error('Saturday quiz cron error:', err);
+  }
+}, { timezone: 'UTC' });
+
+// ─── Send Teaser Question (1 free question for expired trial students) ────────
+async function sendTeaserQuestion(student) {
+  try {
+    const subjects = (student.Subjects || '').split(',').map(s => s.trim()).filter(Boolean);
+    if (!subjects.length) return;
+    const subject = subjects[0];
+    const formLevel = student.Form_level || '4';
+
+    const parsed = await generateQuestion(subject, formLevel);
+    const tip = parsed.examTip ? `\n\n${parsed.examTip}` : '';
+    const questionBody = `${parsed.questionBody}\nA) ${parsed.optionA}\nB) ${parsed.optionB}\nC) ${parsed.optionC}\nD) ${parsed.optionD}${tip}`;
+    const answer = (parsed.answer || 'A').toUpperCase().charAt(0);
+
+    await updateStudent(student.id, {
+      Todays_Correct_Answer: JSON.stringify([{ subject, questionBody, answer, done: false }]),
+    });
+
+    const send = student.Channel === 'SMS' ? sendSMS : sendWhatsApp;
+    const upgradeMsg = `\n\n🔓 Unataka maswali yote 3 leo?\nUpgrade to Wiki Pass — just 1,500 TZS for 7 days!\nReply PAY to see all plans. 💪`;
+    await send(student.Student_Phone, `📚 ${subject} — Today's Free Question\n\n${questionBody}\n\nReply A, B, C or D!${upgradeMsg}`);
+  } catch (err) {
+    console.error(`Teaser question error for ${student.Student_Phone}:`, err);
+  }
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function sleep(ms) {

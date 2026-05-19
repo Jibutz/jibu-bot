@@ -3,6 +3,14 @@ const { sendWhatsApp } = require('./whatsapp');
 const { sendSMS } = require('./sms');
 const { t } = require('./lang');
 
+const PRICING = {
+  trial:   { name: 'Jaribio',      price: 0,     days: 3   },
+  weekly:  { name: 'Wiki Pass',    price: 1500,  days: 7   },
+  monthly: { name: 'Mwezi Pack',   price: 5000,  days: 30  },
+  term:    { name: 'Muhula Pass',  price: 12000, days: 90  },
+  annual:  { name: 'Mwaka Pack',   price: 30000, days: 365 },
+};
+
 const SUBJECTS = ['Maths', 'Biology', 'Chemistry', 'Physics', 'English', 'Geography', 'History'];
 const VALID_FORMS = ['1', '2', '3', '4', '5', '6'];
 
@@ -21,7 +29,7 @@ async function enrollmentFlow(phone, message, student, channel) {
       extra: { Status: 'Enrolling' },
     });
     await send(phone,
-      `Karibu JIBU! 🎓\n\nMimi ni mwalimu wako wa AI atakayekusaidia kufaulu mitihani ya NECTA! 🇹🇿\n\nHere is what we will do together:\n📚 Every day I send you real exam questions for your subjects\n✅ You answer A, B, C or D\n🏆 You earn points, build streaks and climb the ranks\n📈 The more you practice, the better your NECTA results!\n\n7 days FREE — no payment needed to start!\n\nSo let's go — are you a student or parent?\nReply *1* for Mwanafunzi 👨‍🎓\nReply *2* for Mzazi 👨‍👩‍👧`
+      `Karibu JIBU! 🎓\n\nMimi ni mwalimu wako wa AI atakayekusaidia kufaulu mitihani ya NECTA! 🇹🇿\n\nHere is what we will do together:\n📚 Every day I send you real exam questions for your subjects\n✅ You answer A, B, C or D\n🏆 You earn points, build streaks and climb the ranks\n📈 The more you practice, the better your NECTA results!\n\n3 days FREE — no payment needed to start!\n\nSo let's go — are you a student or parent?\nReply *1* for Mwanafunzi 👨‍🎓\nReply *2* for Mzazi 👨‍👩‍👧`
     );
     return;
   }
@@ -66,7 +74,7 @@ async function enrollmentFlow(phone, message, student, channel) {
       const name = capitalizeWords(msg);
       await updateStudent(student.id, { Student_Name: name, Enrollment_Step: 2 });
       await send(phone,
-        `Welcome ${name}! 🎓 Great to have you on JIBU!\n\nHere is how JIBU works:\n\n📚 Every day at 4 PM I send you real NECTA exam questions for your subjects\n✅ Reply A, B, C or D to answer\n💡 After every answer I explain why — right or wrong\n🔥 Build your streak by answering every day\n🏆 Earn points and climb the Tanzania rankings!\n\nUseful commands anytime:\n❓ HELP — get assistance with anything\n📖 SUBJECTS — change your subjects\n📊 MYSTATS — see your performance\n🤔 EXPLAIN — get a deeper explanation\n⚔️ WRONG — challenge my answer\n\n7 days FREE to start — no payment needed!\n\nLet's build your NECTA success together! 🇹🇿\n\nNow let's get you set up — what Form are you in? Reply 1, 2, 3, 4, 5 or 6`
+        `Welcome ${name}! 🎓 Great to have you on JIBU!\n\nHere is how JIBU works:\n\n📚 Every day at 4 PM I send you real NECTA exam questions for your subjects\n✅ Reply A, B, C or D to answer\n💡 After every answer I explain why — right or wrong\n🔥 Build your streak by answering every day\n🏆 Earn points and climb the Tanzania rankings!\n\nUseful commands anytime:\n❓ HELP — get assistance with anything\n📖 SUBJECTS — change your subjects\n📊 MYSTATS — see your performance\n🤔 EXPLAIN — get a deeper explanation\n⚔️ WRONG — challenge my answer\n\n3 days FREE to start — no payment needed!\n\nLet's build your NECTA success together! 🇹🇿\n\nNow let's get you set up — what Form are you in? Reply 1, 2, 3, 4, 5 or 6`
       );
       break;
     }
@@ -76,7 +84,7 @@ async function enrollmentFlow(phone, message, student, channel) {
       const name = capitalizeWords(msg);
       await updateStudent(student.id, { Student_Name: name, Enrollment_Step: 2 });
       await send(phone,
-        `Welcome ${name} to JIBU! 🎓 Great to have you on board!\n\nHere is how JIBU works:\n\n📚 Every day at 4 PM I send real NECTA exam questions\n✅ Reply A, B, C or D to answer\n💡 After every answer I explain why — right or wrong\n🔥 Build your streak by answering every day\n🏆 Earn points and climb the Tanzania rankings!\n\nUseful commands anytime:\n❓ HELP — get assistance with anything\n📖 SUBJECTS — change your subjects\n📊 MYSTATS — see your performance\n\n7 days FREE to start — no payment needed!\n\nLet's build NECTA success together! 🇹🇿\n\nWhat Form is ${name} in? Reply 1, 2, 3, 4, 5 or 6`
+        `Welcome ${name} to JIBU! 🎓 Great to have you on board!\n\nHere is how JIBU works:\n\n📚 Every day at 4 PM I send real NECTA exam questions\n✅ Reply A, B, C or D to answer\n💡 After every answer I explain why — right or wrong\n🔥 Build your streak by answering every day\n🏆 Earn points and climb the Tanzania rankings!\n\nUseful commands anytime:\n❓ HELP — get assistance with anything\n📖 SUBJECTS — change your subjects\n📊 MYSTATS — see your performance\n\n3 days FREE to start — no payment needed!\n\nLet's build NECTA success together! 🇹🇿\n\nWhat Form is ${name} in? Reply 1, 2, 3, 4, 5 or 6`
       );
       break;
     }
@@ -128,7 +136,7 @@ async function enrollmentFlow(phone, message, student, channel) {
         return;
       }
       const trialEnd = new Date();
-      trialEnd.setDate(trialEnd.getDate() + 7);
+      trialEnd.setDate(trialEnd.getDate() + 3);
       const trialEndDate = trialEnd.toISOString().split('T')[0];
       await updateStudent(student.id, {
         Parent_Phone: parentPhone,
@@ -138,8 +146,8 @@ async function enrollmentFlow(phone, message, student, channel) {
         Enrollment_Step: 5,
       });
       await send(phone, t(student,
-        `🎉 You're officially IN! Welcome to JIBU, ${student.Student_Name}!\n\n📅 First question drops at 4:00 PM today!\n💸 7 days free — bure kabisa!\n🏆 Answer daily → earn points → climb the ranks!\n\nTrial ends: ${formatDate(trialEndDate)}\n\nLet's ace that NECTA! 📚🇹🇿🔥`,
-        `🎉 Umefanikiwa! Karibu JIBU, ${student.Student_Name}!\n\n📅 Swali la kwanza linakuja saa 10 jioni leo!\n💸 Siku 7 bure kabisa!\n🏆 Jibu kila siku → pata pointi → panda rank!\n\nTrial inaisha: ${formatDate(trialEndDate)}\n\nTunaenda! Fuzu NECTA! 📚🇹🇿🔥`
+        `🎉 You're officially IN! Welcome to JIBU, ${student.Student_Name}!\n\n📅 First question drops at 4:00 PM today!\n💸 3 days free — bure kabisa!\n🏆 Answer daily → earn points → climb the ranks!\n\nTrial ends: ${formatDate(trialEndDate)}\n\nLet's ace that NECTA! 📚🇹🇿🔥`,
+        `🎉 Umefanikiwa! Karibu JIBU, ${student.Student_Name}!\n\n📅 Swali la kwanza linakuja saa 10 jioni leo!\n💸 Siku 3 bure kabisa!\n🏆 Jibu kila siku → pata pointi → panda rank!\n\nTrial inaisha: ${formatDate(trialEndDate)}\n\nTunaenda! Fuzu NECTA! 📚🇹🇿🔥`
       ));
       break;
     }
@@ -174,4 +182,4 @@ function formatDate(dateStr) {
   return d.toLocaleDateString('sw-TZ', { year: 'numeric', month: 'long', day: 'numeric' });
 }
 
-module.exports = { enrollmentFlow };
+module.exports = { enrollmentFlow, PRICING };
