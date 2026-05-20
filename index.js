@@ -31,6 +31,7 @@ const PLAN_MAP = {
   '4': { name: 'Mwaka Pack',  price: 30000, days: 365 },
 };
 
+// ─── Deployment trigger: 2026-05-20 ──────────────────────────────────────────
 // ─── Health Check ────────────────────────────────────────────────────────────
 app.get('/', (req, res) => {
   res.json({ status: 'JIBU bot is running 🎓', time: new Date().toISOString() });
