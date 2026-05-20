@@ -393,6 +393,26 @@ async function processAnswer(student, answer, phone, channel) {
   queue[idx].done = true;
   const remaining = queue.filter(q => !q.done);
 
+  // Update topic history and question counts carried inside Last_Question
+  let topicHistory = {};
+  let questionCounts = {};
+  try {
+    const prevLQ = JSON.parse(student.Last_Question || '{}');
+    topicHistory = prevLQ.topicHistory || {};
+    questionCounts = prevLQ.questionCounts || {};
+  } catch { /* ignore */ }
+
+  const answeredTopic = current.topic || current.subject;
+  if (!topicHistory[current.subject]) topicHistory[current.subject] = [];
+  if (!topicHistory[current.subject].includes(answeredTopic)) {
+    topicHistory[current.subject].push(answeredTopic);
+    // Keep the 20 most recent topics per subject so the prompt stays concise
+    if (topicHistory[current.subject].length > 20) {
+      topicHistory[current.subject] = topicHistory[current.subject].slice(-20);
+    }
+  }
+  questionCounts[current.subject] = (questionCounts[current.subject] || 0) + 1;
+
   await updateStudent(student.id, {
     Current_Streak: newStreak,
     Total_Points: newPoints,
@@ -402,7 +422,15 @@ async function processAnswer(student, answer, phone, channel) {
     Weak_Topics: weakTopics,
     Strong_Topics: strongTopics,
     Todays_Correct_Answer: remaining.length ? JSON.stringify(queue) : '',
-    Last_Question: JSON.stringify({ questionBody: current.questionBody, answer: current.answer, subject: current.subject, formLevel: student.Form_level || '4' }),
+    Last_Question: JSON.stringify({
+      questionBody: current.questionBody,
+      answer: current.answer,
+      subject: current.subject,
+      formLevel: student.Form_level || '4',
+      topic: answeredTopic,
+      topicHistory,
+      questionCounts,
+    }),
   });
 
   // Send feedback
@@ -534,16 +562,31 @@ async function sendDailyQuestion(student) {
     const subjects = (student.Subjects || '').split(',').map(s => s.trim()).filter(Boolean);
     if (!subjects.length) return;
 
+    // Read topic history and question counts from Last_Question
+    let topicHistory = {};
+    let questionCounts = {};
+    try {
+      const lastQ = JSON.parse(student.Last_Question || '{}');
+      topicHistory = lastQ.topicHistory || {};
+      questionCounts = lastQ.questionCounts || {};
+    } catch { /* first-time student, start fresh */ }
+
     const queue = [];
     const formLevel = student.Form_level || '4';
     for (const subject of subjects) {
+      const coveredTopics = topicHistory[subject] || [];
+      const countSoFar = questionCounts[subject] || 0;
+      // Every 10 answered questions on this subject, make the first one a revision
+      const isRevision = countSoFar > 0 && countSoFar % 10 === 0;
+
       for (let i = 0; i < 3; i++) {
-        const parsed = await generateQuestion(subject, formLevel);
+        const parsed = await generateQuestion(subject, formLevel, coveredTopics, isRevision && i === 0, coveredTopics);
         const tip = parsed.examTip ? `\n\n${parsed.examTip}` : '';
         const questionBody = `${parsed.questionBody}\nA) ${parsed.optionA}\nB) ${parsed.optionB}\nC) ${parsed.optionC}\nD) ${parsed.optionD}${tip}`;
         const answer = (parsed.answer || 'A').toUpperCase().charAt(0);
-        console.log(`📚 ${subject} Q${i+1}: answer="${answer}", q="${parsed.questionBody?.slice(0,60)}"`);
-        queue.push({ subject, questionBody, answer, done: false });
+        const topic = parsed.topic || subject;
+        console.log(`📚 ${subject} Q${i+1} [${topic}]: answer="${answer}", q="${parsed.questionBody?.slice(0,60)}"`);
+        queue.push({ subject, questionBody, answer, topic, done: false });
         await sleep(300);
       }
     }

@@ -4,10 +4,11 @@ const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 /**
  * Generate a NECTA-style multiple choice question for one specific subject.
- * Returns { questionBody: string, answer: string }
- * questionBody is just the question text + A/B/C/D options, no header/footer.
+ * Returns { questionBody, optionA-D, answer, examTip, topic }
+ * Pass coveredTopics (string[]) to avoid repeating subjects already asked.
+ * Pass isRevision=true + revisionTopics to generate a cross-topic revision question.
  */
-async function generateQuestion(subject, formLevel) {
+async function generateQuestion(subject, formLevel, coveredTopics = [], isRevision = false, revisionTopics = []) {
   const systemPrompt = `You are a Tanzania NECTA exam expert following the Tanzania Institute of Education TIE curriculum strictly.
 
 For O-Level (Form 1-4) follow these guidelines:
@@ -59,18 +60,38 @@ NECTA exams repeat question patterns every 4-6 years. When generating questions 
 
 5. TIME TIPS — add exam technique: "In the real exam, spend max 1.5 minutes on multiple choice questions like this one."
 
+TOPIC ROTATION — rotate systematically through these topic areas and always name the topic in the "topic" JSON field:
+- Biology F1-2: cells | nutrition | respiration | transport | excretion | reproduction | ecology
+- Biology F3-4: genetics | evolution | biotechnology | disease | human biology advanced
+- Maths F1-2: algebra basics | geometry | fractions | decimals | ratios | statistics intro
+- Maths F3-4: quadratic equations | trigonometry | matrices | vectors | probability | calculus intro
+- Chemistry: atomic structure | bonding | periodic table | reactions | organic | acids bases | electrochemistry
+- Physics: mechanics | electricity | magnetism | waves | thermal | light | atomic physics
+- History: Tanzania pre-colonial | colonial era | independence | East Africa | World Wars | post-independence
+- Geography: Tanzania physical | climate | population | agriculture | industry | East Africa | world geography
+- English: comprehension | grammar tenses | essay writing | vocabulary | literature
+
 Generate questions that feel like they came straight from a real NECTA paper — because the patterns tell us they will!`;
 
-  const userPrompt = `Generate ONE multiple choice question for Form ${formLevel} ${subject}.
+  const avoidLine = coveredTopics.length > 0
+    ? `\nIMPORTANT — Never repeat topics. Previous topics already asked to this student: ${coveredTopics.slice(-15).join(', ')}. Generate a question on a COMPLETELY DIFFERENT topic from this list.\n`
+    : '';
 
+  const revisionLine = isRevision && revisionTopics.length >= 2
+    ? `\nREVISION QUESTION — This student has answered 10 questions on ${subject}. Combine knowledge from these two topics: ${revisionTopics.slice(-2).join(' and ')}. Write a question that tests how these topics connect. Label the topic field as "revision: ${revisionTopics.slice(-2).join(' + ')}".\n`
+    : '';
+
+  const userPrompt = `Generate ONE multiple choice question for Form ${formLevel} ${subject}.
+${avoidLine}${revisionLine}
 Rules:
 - Real specific question, not generic
 - 4 real answer options, not placeholders
 - Include a short examTip (1-2 sentences) using the NECTA pattern intelligence above — pattern awareness, year pattern, or time tip
+- Include a "topic" field naming the specific topic area from the TOPIC ROTATION list
 - Respond ONLY with valid JSON, nothing else
 
 Example format:
-{"questionBody":"What is the chemical formula for water?","optionA":"H2O","optionB":"CO2","optionC":"NaCl","optionD":"O2","answer":"A","examTip":"💡 Exam tip: Chemical formulas appear in NECTA almost every year. Similar questions appeared in NECTA 2019 and 2022. Spend max 1.5 minutes on this!"}
+{"questionBody":"What is the chemical formula for water?","optionA":"H2O","optionB":"CO2","optionC":"NaCl","optionD":"O2","answer":"A","examTip":"💡 Exam tip: Chemical formulas appear in NECTA almost every year. Similar questions appeared in NECTA 2019 and 2022. Spend max 1.5 minutes on this!","topic":"reactions"}
 
 Now generate a question for Form ${formLevel} ${subject}:`;
 
@@ -83,7 +104,7 @@ Now generate a question for Form ${formLevel} ${subject}:`;
     },
     body: JSON.stringify({
       model: "claude-haiku-4-5-20251001",
-      max_tokens: 300,
+      max_tokens: 400,
       system: systemPrompt,
       messages: [{ role: "user", content: userPrompt }]
     })
