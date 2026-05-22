@@ -61,4 +61,28 @@ async function sendWhatsAppTemplate(to, templateName, components = []) {
   }
 }
 
-module.exports = { sendWhatsApp, sendWhatsAppTemplate };
+async function validateWhatsAppToken() {
+  const token = process.env.WHATSAPP_TOKEN || '';
+  const url = `https://graph.facebook.com/${API_VERSION}/${PHONE_NUMBER_ID}`;
+
+  console.log('🔍 Validating WhatsApp token on startup...');
+  console.log(`🆔 Phone Number ID: ${PHONE_NUMBER_ID}`);
+  console.log(`🔑 Token first 20 chars: ${token.slice(0, 20)} (total length: ${token.length})`);
+
+  if (!token) {
+    console.error('❌ WHATSAPP_TOKEN is not set in environment variables!');
+    return;
+  }
+
+  try {
+    const response = await axios.get(url, {
+      params: { access_token: token, fields: 'display_phone_number,verified_name' },
+    });
+    console.log(`✅ Token valid! Phone: ${response.data.display_phone_number}, Name: ${response.data.verified_name}`);
+  } catch (err) {
+    console.error(`❌ Token validation FAILED — status: ${err.response?.status}`);
+    console.error(`❌ Meta error: ${JSON.stringify(err.response?.data?.error)}`);
+  }
+}
+
+module.exports = { sendWhatsApp, sendWhatsAppTemplate, validateWhatsAppToken };

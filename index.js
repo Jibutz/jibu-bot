@@ -11,7 +11,7 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 const { airtable, getStudentByPhone, createStudent, updateStudent, getAllActiveStudents } = require('./airtable');
-const { sendWhatsApp } = require('./whatsapp');
+const { sendWhatsApp, validateWhatsAppToken } = require('./whatsapp');
 const { sendSMS } = require('./sms');
 const { createPaymentLink, verifyPayment } = require('./payments');
 const { generateQuestion, generateFeedback, generateReexplanation, generateHelpAnswer, generateWeeklySummary, generateMyStats, generateParentReport, generateSaturdayQuiz } = require('./claude');
@@ -904,6 +904,7 @@ function sleep(ms) {
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`🎓 JIBU bot running on port ${PORT}`);
+  validateWhatsAppToken();
 });
 
 module.exports = app;
