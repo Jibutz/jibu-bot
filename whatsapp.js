@@ -8,19 +8,20 @@ async function sendWhatsApp(to, message) {
   const url = `https://graph.facebook.com/${API_VERSION}/${PHONE_NUMBER_ID}/messages`;
   const token = process.env.WHATSAPP_TOKEN || '';
 
+  const body = {
+    messaging_product: 'whatsapp',
+    recipient_type: 'individual',
+    to: phone,
+    type: 'text',
+    text: { body: message },
+  };
+
   console.log(`📡 WA POST ${url}`);
-  console.log(`🆔 Phone Number ID: ${PHONE_NUMBER_ID}`);
   console.log(`🔑 Token: ${token.slice(0, 20)}... (length ${token.length})`);
-  console.log(`📲 Sending to: ${phone}`);
+  console.log(`📦 Request body: ${JSON.stringify(body)}`);
 
   try {
-    const response = await axios.post(url, {
-      messaging_product: 'whatsapp',
-      recipient_type: 'individual',
-      to: phone,
-      type: 'text',
-      text: { body: message },
-    }, {
+    const response = await axios.post(url, body, {
       headers: {
         Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json',
