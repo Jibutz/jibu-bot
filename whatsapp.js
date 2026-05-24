@@ -1,4 +1,5 @@
 const axios = require('axios');
+const { getToken } = require('./tokenManager');
 
 const PHONE_NUMBER_ID = process.env.WHATSAPP_PHONE_NUMBER_ID || '1152290557959699';
 const API_VERSION = 'v19.0';
@@ -6,7 +7,7 @@ const API_VERSION = 'v19.0';
 async function sendWhatsApp(to, message) {
   const phone = to.replace(/^\+/, '').trim();
   const url = `https://graph.facebook.com/${API_VERSION}/${PHONE_NUMBER_ID}/messages`;
-  const token = process.env.WHATSAPP_TOKEN || '';
+  const token = getToken();
 
   const body = {
     messaging_product: 'whatsapp',
@@ -39,7 +40,7 @@ async function sendWhatsApp(to, message) {
 async function sendWhatsAppTemplate(to, templateName, components = []) {
   const phone = to.replace(/^\+/, '').trim();
   const url = `https://graph.facebook.com/${API_VERSION}/${PHONE_NUMBER_ID}/messages`;
-  const token = process.env.WHATSAPP_TOKEN || '';
+  const token = getToken();
 
   console.log(`📡 WA TEMPLATE POST ${url} template=${templateName} to=${phone}`);
 
@@ -63,7 +64,7 @@ async function sendWhatsAppTemplate(to, templateName, components = []) {
 }
 
 async function validateWhatsAppToken() {
-  const token = process.env.WHATSAPP_TOKEN || '';
+  const token = getToken();
   const url = `https://graph.facebook.com/${API_VERSION}/${PHONE_NUMBER_ID}`;
 
   console.log('🔍 Validating WhatsApp token on startup...');

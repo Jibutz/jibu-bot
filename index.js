@@ -12,6 +12,7 @@ app.use(express.urlencoded({ extended: true }));
 
 const { airtable, getStudentByPhone, createStudent, updateStudent, getAllActiveStudents } = require('./airtable');
 const { sendWhatsApp, validateWhatsAppToken } = require('./whatsapp');
+const { initToken, checkAndRefreshToken } = require('./tokenManager');
 const { sendSMS } = require('./sms');
 const { createPaymentLink, verifyPayment } = require('./payments');
 const { generateQuestion, generateFeedback, generateReexplanation, generateHelpAnswer, generateWeeklySummary, generateMyStats, generateParentReport, generateSaturdayQuiz } = require('./claude');
@@ -536,6 +537,15 @@ async function handleSubjectUpdate(student, rawText, phone, channel) {
   );
 }
 
+// ─── CRON: Token Refresh — every 12 hours ────────────────────────────────────
+cron.schedule('0 */12 * * *', async () => {
+  try {
+    await checkAndRefreshToken();
+  } catch (err) {
+    console.error('Token refresh cron error:', err);
+  }
+}, { timezone: 'UTC' });
+
 // ─── CRON: Daily Questions at 16:00 EAT (13:00 UTC) ─────────────────────────
 cron.schedule('0 13 * * *', async () => {
   console.log('📤 Sending daily questions...');
@@ -902,8 +912,9 @@ function sleep(ms) {
 
 // ─── Start Server ─────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   console.log(`🎓 JIBU bot running on port ${PORT}`);
+  await initToken();
   validateWhatsAppToken();
 });
 
