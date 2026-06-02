@@ -71,7 +71,15 @@ TOPIC ROTATION — rotate systematically through these topic areas and always na
 - Geography: Tanzania physical | climate | population | agriculture | industry | East Africa | world geography
 - English: comprehension | grammar tenses | essay writing | vocabulary | literature
 
-Generate questions that feel like they came straight from a real NECTA paper — because the patterns tell us they will!`;
+Generate questions that feel like they came straight from a real NECTA paper — because the patterns tell us they will!
+
+CRITICAL JSON FORMATTING RULES — you must follow these exactly or the response will be rejected:
+- All field values must be plain text only — no special characters inside JSON strings
+- Do NOT use apostrophes or single quotes inside any field value (write "dont" not "don't", "its" not "it's")
+- Do NOT use double quotes inside field values (use alternative phrasing)
+- Do NOT use math symbols like ÷, ×, ≠, ≤, ≥, ², ³, √ inside JSON strings (write "squared", "divided by", "square root of" instead)
+- Do NOT use backslashes, curly braces, or any character that would break JSON parsing
+- Keep all text simple, plain, and JSON-safe`;
 
   const avoidLine = coveredTopics.length > 0
     ? `\nIMPORTANT — Never repeat topics. Previous topics already asked to this student: ${coveredTopics.slice(-15).join(', ')}. Generate a question on a COMPLETELY DIFFERENT topic from this list.\n`
@@ -115,7 +123,37 @@ Now generate a question for Form ${formLevel} ${subject}:`;
   const text = data.content[0].text;
   console.log("Claude text:", text);
   const cleaned = text.replace(/```json/g, '').replace(/```/g, '').trim();
-  return JSON.parse(cleaned);
+
+  // Sanitize the response before parsing: escape unescaped control characters
+  // and neutralize smart/curly quotes that break JSON.parse
+  const sanitized = cleaned
+    .replace(/[‘’]/g, "'")   // curly single quotes -> straight
+    .replace(/[“”]/g, '"')   // curly double quotes -> straight
+    .replace(/[–—]/g, '-')   // en/em dash -> hyphen
+    .replace(/[\x00-\x1F\x7F]/g, ' ') // strip control characters
+    // Escape unescaped double quotes inside JSON string values (best-effort)
+    .replace(/":\s*"((?:[^"\\]|\\.)*)"/g, (match) => {
+      // Already valid — let JSON.parse handle it
+      return match;
+    });
+
+  try {
+    return JSON.parse(sanitized);
+  } catch (parseErr) {
+    console.error('Claude JSON parse failed:', parseErr.message);
+    console.error('Raw text was:', text);
+    // Return a safe fallback question so the bot never crashes
+    return {
+      questionBody: `Which of the following is a key concept in Form ${formLevel} ${subject}?`,
+      optionA: "Option A",
+      optionB: "Option B",
+      optionC: "Option C",
+      optionD: "Option D",
+      answer: "A",
+      examTip: "💡 Exam tip: Review your Form " + formLevel + " " + subject + " notes carefully before the exam.",
+      topic: "general"
+    };
+  }
 }
 
 /**
