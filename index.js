@@ -537,12 +537,15 @@ async function handleSubjectUpdate(student, rawText, phone, channel) {
   );
 }
 
-// ─── CRON: Token Refresh — every 12 hours ────────────────────────────────────
-cron.schedule('0 */12 * * *', async () => {
+// ─── CRON: Token Health Check — daily at 03:00 UTC ───────────────────────────
+// Checks days remaining on the 60-day token and refreshes proactively at
+// ≤10 days left (i.e. around day 50), then persists the new token to
+// Airtable and the Railway WHATSAPP_TOKEN environment variable.
+cron.schedule('0 3 * * *', async () => {
   try {
     await checkAndRefreshToken();
   } catch (err) {
-    console.error('Token refresh cron error:', err);
+    console.error(`[${new Date().toISOString()}] ❌ Token health-check cron error:`, err.message);
   }
 }, { timezone: 'UTC' });
 
