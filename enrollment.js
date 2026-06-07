@@ -14,23 +14,53 @@ const PRICING = {
 const SUBJECTS = ['Maths', 'Biology', 'Chemistry', 'Physics', 'English', 'Geography', 'History'];
 const VALID_FORMS = ['1', '2', '3', '4', '5', '6'];
 
+const GREETINGS = new Set([
+  'hi', 'hello', 'hey', 'habari', 'mambo', 'sasa', 'hujambo', 'jambo',
+  'salama', 'niaje', 'vipi', 'howdy', 'yo', 'sup', 'wassup', 'hola',
+  'bonjour', 'ciao', 'good morning', 'good afternoon', 'good evening',
+  'asubuhi', 'usiku', 'alasiri', 'shikamoo', 'marahaba',
+]);
+
+function isGreeting(msg) {
+  return GREETINGS.has(msg.toLowerCase().trim());
+}
+
+const WELCOME_MSG =
+  `Karibu JIBU! 🎓\n\nMimi ni mwalimu wako wa AI atakayekusaidia kufaulu mitihani ya NECTA! 🇹🇿\n\nHere is what we will do together:\n📚 Every day I send you real exam questions for your subjects\n✅ You answer A, B, C or D\n🏆 You earn points, build streaks and climb the ranks\n📈 The more you practice, the better your NECTA results!\n\n3 days FREE — no payment needed to start!\n\nSo let's go — are you a student or parent?\nReply *1* for Mwanafunzi 👨‍🎓\nReply *2* for Mzazi 👨‍👩‍👧`;
+
 async function enrollmentFlow(phone, message, student, channel) {
   const send = channel === 'SMS' ? sendSMS : sendWhatsApp;
   const normalizedPhone = phone.replace(/^\+/, '');
   const msg = message.trim();
 
-  // ── Brand new contact: create record at step 0 and ask role ──────────────
+  // ── No Airtable record yet: send welcome, OR create record if replying 1/2 ─
   if (!student) {
-    await createStudent({
-      phone: normalizedPhone,
-      name: '',
-      enrollmentStep: 0,
-      channel,
-      extra: { Status: 'Enrolling' },
-    });
-    await send(phone,
-      `Karibu JIBU! 🎓\n\nMimi ni mwalimu wako wa AI atakayekusaidia kufaulu mitihani ya NECTA! 🇹🇿\n\nHere is what we will do together:\n📚 Every day I send you real exam questions for your subjects\n✅ You answer A, B, C or D\n🏆 You earn points, build streaks and climb the ranks\n📈 The more you practice, the better your NECTA results!\n\n3 days FREE — no payment needed to start!\n\nSo let's go — are you a student or parent?\nReply *1* for Mwanafunzi 👨‍🎓\nReply *2* for Mzazi 👨‍👩‍👧`
-    );
+    if (msg === '1') {
+      await createStudent({
+        phone: normalizedPhone,
+        name: '',
+        enrollmentStep: 1,
+        channel,
+        extra: { Status: 'Enrolling' },
+      });
+      await send(phone,
+        `Sawa! 🎓 Student mode — let's go!\n\nWhat's your full name? ✍️`
+      );
+    } else if (msg === '2') {
+      await createStudent({
+        phone: normalizedPhone,
+        name: '',
+        enrollmentStep: 11,
+        channel,
+        extra: { Status: 'Enrolling' },
+      });
+      await send(phone,
+        `Asante, mzazi! 🙌 Amazing that you're investing in your child's future!\n\nWhat's your child's full name? ✍️`
+      );
+    } else {
+      // First message (greeting or anything else) — just send welcome, no Airtable write
+      await send(phone, WELCOME_MSG);
+    }
     return;
   }
 
@@ -46,12 +76,12 @@ async function enrollmentFlow(phone, message, student, channel) {
 
   switch (step) {
 
-    // ── Step 0: student or parent? ──────────────────────────────────────────
+    // ── Step 0: legacy records waiting for role choice ──────────────────────
     case 0: {
       if (msg === '1') {
         await updateStudent(student.id, { Enrollment_Step: 1 });
         await send(phone, t(student,
-          `Sawa! 🎓 Student mode — let's go!\n\nWhat's your full name?`,
+          `Sawa! 🎓 Student mode — let's go!\n\nWhat's your full name? ✍️`,
           `Sawa! 🎓 Mwanafunzi wenyewe!\n\nJina lako kamili ni nani? ✍️`
         ));
       } else if (msg === '2') {
@@ -71,6 +101,13 @@ async function enrollmentFlow(phone, message, student, channel) {
 
     // ── Step 1: student entered their own name ──────────────────────────────
     case 1: {
+      if (isGreeting(msg)) {
+        await send(phone, t(student,
+          `That's a greeting, not a name! 😄 What's your full name? ✍️`,
+          `Hiyo ni salamu, si jina! 😄 Jina lako kamili ni nani? ✍️`
+        ));
+        return;
+      }
       const name = capitalizeWords(msg);
       await updateStudent(student.id, { Student_Name: name, Enrollment_Step: 2 });
       await send(phone,
@@ -81,6 +118,13 @@ async function enrollmentFlow(phone, message, student, channel) {
 
     // ── Step 11: parent entered child's name ────────────────────────────────
     case 11: {
+      if (isGreeting(msg)) {
+        await send(phone, t(student,
+          `That's a greeting, not a name! 😄 What's your child's full name? ✍️`,
+          `Hiyo ni salamu, si jina! 😄 Jina kamili la mtoto ni nani? ✍️`
+        ));
+        return;
+      }
       const name = capitalizeWords(msg);
       await updateStudent(student.id, { Student_Name: name, Enrollment_Step: 2 });
       await send(phone,
