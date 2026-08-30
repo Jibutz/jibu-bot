@@ -29,6 +29,7 @@ const GRAPH_VERSION   = 'v19.0';
 
 // ─── In-process token state ───────────────────────────────────────────────────
 let currentToken = process.env.WHATSAPP_TOKEN || '';
+let currentExpiry = null; // epoch seconds, updated whenever the token is loaded/refreshed
 
 // ─── Timestamp helper ─────────────────────────────────────────────────────────
 function ts() {
@@ -243,6 +244,7 @@ async function refreshToken() {
 
   // 1. Update in-process memory
   currentToken = result.token;
+  currentExpiry = result.expiry;
   process.env.WHATSAPP_TOKEN = currentToken;
 
   const daysLeft = Math.floor((result.expiry - Date.now() / 1000) / 86400);
@@ -325,8 +327,10 @@ async function initToken() {
 
     if (daysLeft > REFRESH_THRESHOLD_DAYS) {
       currentToken = stored.token;
+      currentExpiry = stored.expiry;
       process.env.WHATSAPP_TOKEN = currentToken;
       console.log(`[${ts()}] ✅ Using Airtable token — healthy, no exchange needed.`);
+      console.log(`[${ts()}] 🔑 Token expiry: ${expiryDate} (~${daysLeft} days remaining)`);
       console.log(`[${ts()}] 🔑 ──────────────────────────────────────────────`);
       return;
     }
@@ -338,6 +342,13 @@ async function initToken() {
   // Exchange whatever we have for a fresh long-lived token
   await refreshToken();
 
+  if (currentExpiry) {
+    const expiryDate = new Date(currentExpiry * 1000).toISOString().split('T')[0];
+    const daysLeft = Math.floor((currentExpiry - Date.now() / 1000) / 86400);
+    console.log(`[${ts()}] 🔑 Token expiry: ${expiryDate} (~${daysLeft} days remaining)`);
+  } else {
+    console.log(`[${ts()}] 🔑 Token expiry: unknown (refresh failed or could not be determined)`);
+  }
   console.log(`[${ts()}] 🔑 ──────────────────────────────────────────────`);
 }
 
