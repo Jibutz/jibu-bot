@@ -4,6 +4,25 @@ const { getToken } = require('./tokenManager');
 const PHONE_NUMBER_ID = process.env.WHATSAPP_PHONE_NUMBER_ID || '1152290557959699';
 const API_VERSION = 'v19.0';
 
+// ─── Shared failure logging ───────────────────────────────────────────────────
+// Prints the full Meta API error (status, code, type, message, trace id) so
+// send failures are never silent in Railway logs.
+function logSendFailure(phone, err) {
+  const status = err.response?.status;
+  const metaError = err.response?.data?.error;
+
+  const summary = metaError
+    ? `[HTTP ${status}] code=${metaError.code}${metaError.error_subcode ? `/${metaError.error_subcode}` : ''} type=${metaError.type} — ${metaError.message}${metaError.error_data?.details ? ` (${metaError.error_data.details})` : ''}`
+    : (err.message || String(err));
+
+  console.error(`❌ Message send FAILED to ${phone}: ${summary}`);
+  console.error(`❌ WA error status: ${status}`);
+  console.error(`❌ WA error full response: ${JSON.stringify(err.response?.data, null, 2)}`);
+  if (metaError?.fbtrace_id) {
+    console.error(`❌ Meta fbtrace_id: ${metaError.fbtrace_id}`);
+  }
+}
+
 async function sendWhatsApp(to, message) {
   const phone = to.replace(/^\+/, '').trim();
   const url = `https://graph.facebook.com/${API_VERSION}/${PHONE_NUMBER_ID}/messages`;
@@ -17,6 +36,7 @@ async function sendWhatsApp(to, message) {
     text: { body: message },
   };
 
+  console.log(`📤 Attempting to send message to ${phone}`);
   console.log(`📡 WA POST ${url}`);
   console.log(`🔑 Token: ${token.slice(0, 20)}... (length ${token.length})`);
   console.log(`📦 Request body: ${JSON.stringify(body)}`);
@@ -29,10 +49,10 @@ async function sendWhatsApp(to, message) {
       },
     });
     console.log(`✅ WA sent to ${phone} — status ${response.status}`);
+    console.log(`✅ Message sent successfully`);
     return response.data;
   } catch (err) {
-    console.error(`❌ WA error status: ${err.response?.status}`);
-    console.error(`❌ WA error body: ${JSON.stringify(err.response?.data)}`);
+    logSendFailure(phone, err);
     throw err;
   }
 }
@@ -42,6 +62,7 @@ async function sendWhatsAppTemplate(to, templateName, components = []) {
   const url = `https://graph.facebook.com/${API_VERSION}/${PHONE_NUMBER_ID}/messages`;
   const token = getToken();
 
+  console.log(`📤 Attempting to send message to ${phone}`);
   console.log(`📡 WA TEMPLATE POST ${url} template=${templateName} to=${phone}`);
 
   try {
@@ -55,10 +76,10 @@ async function sendWhatsAppTemplate(to, templateName, components = []) {
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
     });
     console.log(`✅ WA template sent to ${phone} — status ${response.status}`);
+    console.log(`✅ Message sent successfully`);
     return response.data;
   } catch (err) {
-    console.error(`❌ WA template error status: ${err.response?.status}`);
-    console.error(`❌ WA template error body: ${JSON.stringify(err.response?.data)}`);
+    logSendFailure(phone, err);
     throw err;
   }
 }
