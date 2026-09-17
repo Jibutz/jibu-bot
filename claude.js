@@ -5,10 +5,12 @@ const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 /**
  * Generate a NECTA-style multiple choice question for one specific subject.
  * Returns { questionBody, optionA-D, answer, examTip, topic }
- * Pass coveredTopics (string[]) to avoid repeating subjects already asked.
+ * Pass coveredTopics (string[]) to steer toward topics not asked recently.
  * Pass isRevision=true + revisionTopics to generate a cross-topic revision question.
+ * Pass recentQuestions (string[], most recent last) — the exact wording of
+ * questions already asked to this student — so Claude never repeats one.
  */
-async function generateQuestion(subject, formLevel, coveredTopics = [], isRevision = false, revisionTopics = []) {
+async function generateQuestion(subject, formLevel, coveredTopics = [], isRevision = false, revisionTopics = [], recentQuestions = []) {
   const systemPrompt = `You are a Tanzania NECTA exam expert following the Tanzania Institute of Education TIE curriculum strictly.
 
 For O-Level (Form 1-4) follow these guidelines:
@@ -45,31 +47,26 @@ NECTA exams repeat question patterns every 4-6 years. When generating questions 
 1. PATTERN AWARENESS — after generating a question, add a pattern tip like:
 "💡 Exam tip: This type of question appears in NECTA almost every year. Master this pattern and you save 10+ minutes in the exam!"
 
-2. HIGH FREQUENCY TOPICS — always prioritize these topics as they appear most in NECTA:
-- Maths: quadratic equations, differentiation, probability, matrices, vectors
-- Biology: cell biology, photosynthesis, human digestive system, genetics, ecology
-- Chemistry: chemical equations, periodic table, organic chemistry, acids and bases
-- Physics: electricity, waves, Newton's laws, energy transformations
-- English: comprehension, essay writing, grammar tenses
-- History: colonialism, independence movements, Tanzania political history
-- Geography: weather, population, agriculture in Tanzania and East Africa
+2. FULL SYLLABUS COVERAGE — NECTA draws questions from the WHOLE syllabus, not just a few popular chapters. Do NOT default to the same handful of "favourite" topics (e.g. do not pick photosynthesis or cell biology every time for Biology). Treat every chapter below as equally likely to be tested, and actively rotate away from whichever topics were covered most recently for this student (see "Previous topics" below).
 
-3. DIFFICULTY PATTERN — NECTA Paper 1 is always multiple choice (what we send). Paper 2 is structured. Tell students: "This is a Paper 1 style question — expect similar in your exam!"
+3. DIFFICULTY PATTERN — NECTA Paper 1 is always multiple choice (what we send). Paper 2 is structured. Tell students: "This is a Paper 1 style question — expect similar in your exam!" Vary difficulty question-to-question (recall-level, applied, and analytical/multi-step) rather than always writing the same difficulty.
 
-4. YEAR PATTERN TIP — occasionally add: "Similar questions appeared in NECTA [year] and [year]. Knowing the pattern = knowing the exam! 🎯"
+4. YEAR PATTERN TIP — vary the specific years you reference across different real NECTA exam years (roughly 2015-2024) rather than reusing the same one or two years every time: "Similar questions appeared in NECTA [year] and [year]. Knowing the pattern = knowing the exam! 🎯"
 
 5. TIME TIPS — add exam technique: "In the real exam, spend max 1.5 minutes on multiple choice questions like this one."
 
-TOPIC ROTATION — rotate systematically through these topic areas and always name the topic in the "topic" JSON field:
-- Biology F1-2: cells | nutrition | respiration | transport | excretion | reproduction | ecology
-- Biology F3-4: genetics | evolution | biotechnology | disease | human biology advanced
-- Maths F1-2: algebra basics | geometry | fractions | decimals | ratios | statistics intro
-- Maths F3-4: quadratic equations | trigonometry | matrices | vectors | probability | calculus intro
-- Chemistry: atomic structure | bonding | periodic table | reactions | organic | acids bases | electrochemistry
-- Physics: mechanics | electricity | magnetism | waves | thermal | light | atomic physics
-- History: Tanzania pre-colonial | colonial era | independence | East Africa | World Wars | post-independence
-- Geography: Tanzania physical | climate | population | agriculture | industry | East Africa | world geography
-- English: comprehension | grammar tenses | essay writing | vocabulary | literature
+TOPIC ROTATION — each subject's full syllabus is broken into chapters below. On every call, RANDOMLY select one chapter (weighted equally — do not favor the first or most "famous" ones), then a specific sub-topic within it, and always name that specific sub-topic in the "topic" JSON field:
+
+- Biology (O-Level, Form 1-4) — rotate across ALL of: cell structure and organisation | classification of living organisms | nutrition in plants (photosynthesis) | nutrition in animals and humans (digestion) | transport systems (circulatory, plant transport) | respiration (aerobic/anaerobic, gas exchange) | excretion | reproduction in plants | reproduction in humans | genetics and heredity | evolution and natural selection | ecology and ecosystems | human health, hygiene and disease | support and movement (skeleton, muscles) | coordination and response (nervous and hormonal systems) | growth and development | biotechnology | conservation of the environment
+- Maths (O-Level, Form 1-4) — rotate across ALL of: numbers and numeration | algebraic expressions and equations | linear and quadratic equations | inequalities | geometry (lines, angles, triangles, polygons, circles, construction) | mensuration (perimeter, area, volume, surface area) | trigonometry | coordinate geometry | statistics | probability | sets | matrices | transformations | vectors | sequences and series | commercial/financial arithmetic | introduction to calculus (differentiation, integration — Form 4)
+- Chemistry (O-Level) — rotate across ALL of: introduction to chemistry and lab safety | states of matter | atomic structure | the periodic table | chemical bonding | chemical equations and stoichiometry | rate of reaction | energy changes in reactions | acids bases and salts | electrochemistry | air, combustion and gases | water and solutions | metals and extraction of metals | organic chemistry (hydrocarbons, alcohols) | environmental and industrial chemistry
+- Physics (O-Level) — rotate across ALL of: measurement and units | mechanics (motion, forces, work, energy, power, machines) | matter and density | pressure and fluids | thermal physics (heat and temperature) | waves and sound | light and optics | electricity (current, circuits, resistance) | magnetism and electromagnetism | electronics basics | atomic and nuclear physics
+- English — rotate across ALL of: grammar (tenses, parts of speech, sentence structure, concord) | reading comprehension | summary writing | composition and essay writing (narrative, descriptive, argumentative, letter writing) | vocabulary and idioms | literature (set books, poetry, drama, oral literature)
+- History — rotate across ALL of: pre-colonial African societies and economies | trade contacts (trans-Saharan, Indian Ocean, Arab, Portuguese) | the slave trade | colonialism and colonial rule (German East Africa, British Tanganyika) | African resistance movements | nationalism and the independence struggle | Tanzania post-independence (Ujamaa, Arusha Declaration, villagization) | East African and regional cooperation | World history (World War I and II, the Cold War) | the United Nations and international relations
+- Geography — rotate across ALL of: the earth and solar system | map reading and interpretation | weather and climate | landforms and physical geography of Tanzania/East Africa | soils and vegetation | population and settlement | agriculture | mining and industry | transport and communication | tourism | environmental conservation and hazards | world/comparative regional geography
+- Kiswahili — rotate across ALL of: sarufi (grammar) | ufahamu (comprehension) | insha (composition) | fasihi simulizi (oral literature) | riwaya (novels) | tamthiliya (plays) | ushairi (poetry) | methali na semi (proverbs and idioms)
+
+For A-Level combinations, apply the same principle: rotate broadly and evenly across every major chapter of that subject's syllabus at ACSEE level, not just the two or three most commonly cited ones.
 
 Generate questions that feel like they came straight from a real NECTA paper — because the patterns tell us they will!
 
@@ -82,7 +79,11 @@ CRITICAL JSON FORMATTING RULES — you must follow these exactly or the response
 - Keep all text simple, plain, and JSON-safe`;
 
   const avoidLine = coveredTopics.length > 0
-    ? `\nIMPORTANT — Never repeat topics. Previous topics already asked to this student: ${coveredTopics.slice(-15).join(', ')}. Generate a question on a COMPLETELY DIFFERENT topic from this list.\n`
+    ? `\nIMPORTANT — Rotate topics. Previous topics already asked to this student: ${coveredTopics.slice(-15).join(', ')}. Pick a topic from the TOPIC ROTATION list above that is NOT in this list (or is the least recently used one if all have been covered).\n`
+    : '';
+
+  const noRepeatLine = recentQuestions.length > 0
+    ? `\nDO NOT REPEAT — This student has already been asked these exact questions. Never generate a question with the same or substantially similar wording, scenario, or numbers as any of these:\n${recentQuestions.slice(-30).map((q, i) => `${i + 1}. ${q}`).join('\n')}\nThe new question must be recognizably different from every one of these — different topic, angle, or specific facts.\n`
     : '';
 
   const revisionLine = isRevision && revisionTopics.length >= 2
@@ -90,7 +91,7 @@ CRITICAL JSON FORMATTING RULES — you must follow these exactly or the response
     : '';
 
   const userPrompt = `Generate ONE multiple choice question for Form ${formLevel} ${subject}.
-${avoidLine}${revisionLine}
+${avoidLine}${noRepeatLine}${revisionLine}
 Rules:
 - Real specific question, not generic
 - 4 real answer options, not placeholders

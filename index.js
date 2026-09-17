@@ -397,12 +397,16 @@ async function processAnswer(student, answer, phone, channel) {
   const remaining = queue.filter(q => !q.done);
 
   // Update topic history and question counts carried inside Last_Question
+  // (questionHistory — the exact-wording anti-repeat list — is written by
+  // sendDailyQuestion and just needs to be passed through unchanged here)
   let topicHistory = {};
   let questionCounts = {};
+  let questionHistory = {};
   try {
     const prevLQ = JSON.parse(student.Last_Question || '{}');
     topicHistory = prevLQ.topicHistory || {};
     questionCounts = prevLQ.questionCounts || {};
+    questionHistory = prevLQ.questionHistory || {};
   } catch { /* ignore */ }
 
   const answeredTopic = current.topic || current.subject;
@@ -433,6 +437,7 @@ async function processAnswer(student, answer, phone, channel) {
       topic: answeredTopic,
       topicHistory,
       questionCounts,
+      questionHistory,
     }),
   });
 
@@ -572,41 +577,63 @@ cron.schedule('0 13 * * *', async () => {
   }
 }, { timezone: 'UTC' });
 
+const MAX_RECENT_QUESTIONS_PER_SUBJECT = 30;
+
 async function sendDailyQuestion(student) {
   try {
     const subjects = (student.Subjects || '').split(',').map(s => s.trim()).filter(Boolean);
     if (!subjects.length) return;
 
-    // Read topic history and question counts from Last_Question
-    let topicHistory = {};
-    let questionCounts = {};
+    // Read topic history, question counts, and the exact-wording question
+    // history (last 30 per subject) from Last_Question.
+    let lastQuestionData = {};
     try {
-      const lastQ = JSON.parse(student.Last_Question || '{}');
-      topicHistory = lastQ.topicHistory || {};
-      questionCounts = lastQ.questionCounts || {};
+      lastQuestionData = JSON.parse(student.Last_Question || '{}');
     } catch { /* first-time student, start fresh */ }
+    const topicHistory = lastQuestionData.topicHistory || {};
+    const questionCounts = lastQuestionData.questionCounts || {};
+    const questionHistory = lastQuestionData.questionHistory || {};
 
     const queue = [];
     const formLevel = student.Form_level || '4';
     for (const subject of subjects) {
-      const coveredTopics = topicHistory[subject] || [];
       const countSoFar = questionCounts[subject] || 0;
       // Every 10 answered questions on this subject, make the first one a revision
       const isRevision = countSoFar > 0 && countSoFar % 10 === 0;
 
+      // Local working copies so topics/questions generated earlier in THIS
+      // batch also get avoided by later questions in the same batch, not
+      // just questions from previous days.
+      const localTopics = [...(topicHistory[subject] || [])];
+      const localQuestions = [...(questionHistory[subject] || [])];
+
       for (let i = 0; i < 3; i++) {
-        const parsed = await generateQuestion(subject, formLevel, coveredTopics, isRevision && i === 0, coveredTopics);
+        const parsed = await generateQuestion(subject, formLevel, localTopics, isRevision && i === 0, localTopics, localQuestions);
         const tip = parsed.examTip ? `\n\n${parsed.examTip}` : '';
         const questionBody = `${parsed.questionBody}\nA) ${parsed.optionA}\nB) ${parsed.optionB}\nC) ${parsed.optionC}\nD) ${parsed.optionD}${tip}`;
         const answer = (parsed.answer || 'A').toUpperCase().charAt(0);
         const topic = parsed.topic || subject;
         console.log(`📚 ${subject} Q${i+1} [${topic}]: answer="${answer}", q="${parsed.questionBody?.slice(0,60)}"`);
         queue.push({ subject, questionBody, answer, topic, done: false });
+
+        if (topic && !localTopics.includes(topic)) localTopics.push(topic);
+        if (parsed.questionBody) localQuestions.push(parsed.questionBody);
         await sleep(300);
       }
+
+      topicHistory[subject] = localTopics.slice(-20);
+      questionHistory[subject] = localQuestions.slice(-MAX_RECENT_QUESTIONS_PER_SUBJECT);
     }
 
-    await updateStudent(student.id, { Todays_Correct_Answer: JSON.stringify(queue) });
+    await updateStudent(student.id, {
+      Todays_Correct_Answer: JSON.stringify(queue),
+      Last_Question: JSON.stringify({
+        ...lastQuestionData,
+        topicHistory,
+        questionCounts,
+        questionHistory,
+      }),
+    });
 
     const streak = student.Current_Streak || 0;
     const rank = student.Rank_Title || getRankTitle(streak);
@@ -892,7 +919,15 @@ async function sendTeaserQuestion(student) {
     const subject = subjects[0];
     const formLevel = student.Form_level || '4';
 
-    const parsed = await generateQuestion(subject, formLevel);
+    let topicHistory = {};
+    let questionHistory = {};
+    try {
+      const lastQ = JSON.parse(student.Last_Question || '{}');
+      topicHistory = lastQ.topicHistory || {};
+      questionHistory = lastQ.questionHistory || {};
+    } catch { /* first-time student, start fresh */ }
+
+    const parsed = await generateQuestion(subject, formLevel, topicHistory[subject] || [], false, [], questionHistory[subject] || []);
     const tip = parsed.examTip ? `\n\n${parsed.examTip}` : '';
     const questionBody = `${parsed.questionBody}\nA) ${parsed.optionA}\nB) ${parsed.optionB}\nC) ${parsed.optionC}\nD) ${parsed.optionD}${tip}`;
     const answer = (parsed.answer || 'A').toUpperCase().charAt(0);
