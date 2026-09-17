@@ -1,7 +1,35 @@
 const Airtable = require('airtable');
 
-const base = new Airtable({ apiKey: process.env.AIRTABLE_API_KEY }).base(process.env.AIRTABLE_BASE_ID);
 const TABLE = 'Students';
+
+// Lazily construct the Airtable base on first use instead of at require-time,
+// so the process can boot (e.g. to serve the health-check route) even when
+// AIRTABLE_API_KEY / AIRTABLE_BASE_ID aren't set locally.
+let _base = null;
+function base(table) {
+  if (!_base) {
+    if (!process.env.AIRTABLE_API_KEY || !process.env.AIRTABLE_BASE_ID) {
+      throw new Error('Airtable is not configured — set AIRTABLE_API_KEY and AIRTABLE_BASE_ID.');
+    }
+    try {
+      _base = new Airtable({ apiKey: process.env.AIRTABLE_API_KEY }).base(process.env.AIRTABLE_BASE_ID);
+    } catch (err) {
+      console.error('Airtable base() construction error:', err.message || err);
+      throw err;
+    }
+  }
+  return _base(table);
+}
+
+/**
+ * Log an Airtable error with as much detail as the SDK gives us
+ * (HTTP status, Airtable error type, and which call failed).
+ */
+function logAirtableError(context, err) {
+  console.error(
+    `Airtable ${context} error: status=${err.statusCode ?? 'n/a'} type=${err.error ?? 'n/a'} message=${err.message ?? err}`
+  );
+}
 
 /**
  * Normalize a phone number to a consistent format (no + prefix)
@@ -24,7 +52,7 @@ async function getStudentByPhone(phone) {
     if (!records.length) return null;
     return { id: records[0].id, ...records[0].fields };
   } catch (err) {
-    console.error('Airtable getStudentByPhone error:', err);
+    logAirtableError(`getStudentByPhone(phone=${normalized})`, err);
     return null;
   }
 }
@@ -58,7 +86,7 @@ async function createStudent(data) {
     });
     return { id: record.id, ...record.fields };
   } catch (err) {
-    console.error('Airtable createStudent error:', err);
+    logAirtableError(`createStudent(phone=${data.phone})`, err);
     throw err;
   }
 }
@@ -71,7 +99,7 @@ async function updateStudent(recordId, fields) {
     const record = await base(TABLE).update(recordId, fields);
     return { id: record.id, ...record.fields };
   } catch (err) {
-    console.error('Airtable updateStudent error:', err);
+    logAirtableError(`updateStudent(recordId=${recordId})`, err);
     throw err;
   }
 }
@@ -91,7 +119,7 @@ async function getAllActiveStudents(statuses = ['Active', 'Trial']) {
 
     return records.map(r => ({ id: r.id, ...r.fields }));
   } catch (err) {
-    console.error('Airtable getAllActiveStudents error:', err);
+    logAirtableError(`getAllActiveStudents(statuses=${statuses.join(',')})`, err);
     return [];
   }
 }
@@ -108,7 +136,7 @@ async function getStudentByIndexNumber(indexNumber) {
     if (!records.length) return null;
     return { id: records[0].id, ...records[0].fields };
   } catch (err) {
-    console.error('Airtable getStudentByIndexNumber error:', err);
+    logAirtableError(`getStudentByIndexNumber(indexNumber=${indexNumber})`, err);
     return null;
   }
 }

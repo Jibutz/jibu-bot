@@ -918,6 +918,8 @@ function sleep(ms) {
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, async () => {
   console.log(`🎓 JIBU bot running on port ${PORT}`);
+  const airtableKey = process.env.AIRTABLE_API_KEY || '';
+  console.log(`🔑 AIRTABLE_API_KEY loaded: ${airtableKey ? airtableKey.slice(0, 15) : '(not set)'}...`);
   await initToken();
   validateWhatsAppToken();
 });
