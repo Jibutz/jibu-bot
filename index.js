@@ -21,6 +21,7 @@ const { getRankTitle, checkMilestone, getMilestoneMessage } = require('./ranks')
 const { enrollmentFlow, PRICING } = require('./enrollment');
 const { handleNectaResults } = require('./necta');
 const { t } = require('./lang');
+const { O_LEVEL_SUBJECTS, A_LEVEL_MENU, isALevelForm, parseOLevelSubjects, parseALevelCombination } = require('./subjects');
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -32,6 +33,13 @@ const PLAN_MAP = {
   '3': { name: 'Muhula Pass', price: 12000, days: 90  },
   '4': { name: 'Mwaka Pack',  price: 30000, days: 365 },
 };
+
+function subjectsMenuMessage(student) {
+  if (isALevelForm(student.Form_level)) {
+    return `Which combination do you want to study? Reply with the code:\n\n${A_LEVEL_MENU}\n\nExample: PCM`;
+  }
+  return `Which subjects do you want to study? Choose from:\n\n📐 Maths\n🔬 Biology\n⚗️ Chemistry\n🧪 Physics\n📖 English\n📚 History\n🌍 Geography\n🇹🇿 Kiswahili\n\nType the subjects you want separated by commas!\nExample: Maths, Biology, Chemistry`;
+}
 
 // ─── Deployment trigger: 2026-05-20 ──────────────────────────────────────────
 // ─── Health Check ────────────────────────────────────────────────────────────
@@ -104,9 +112,7 @@ app.post('/webhook/whatsapp', async (req, res) => {
 
       if (msg === 'SUBJECTS') {
         await updateStudent(student.id, { Enrollment_Step: 30 });
-        await sendWhatsApp(phone,
-          `Which subjects do you want to study? Choose from:\n\n📐 Maths\n🔬 Biology\n⚗️ Chemistry\n🧪 Physics\n📖 English\n📚 History\n🌍 Geography\n\nType the subjects you want separated by commas!\nExample: Maths, Biology, Chemistry`
-        );
+        await sendWhatsApp(phone, subjectsMenuMessage(student));
         continue;
       }
 
@@ -226,9 +232,7 @@ app.post('/webhook/sms', async (req, res) => {
 
     if (msg === 'SUBJECTS') {
       await updateStudent(student.id, { Enrollment_Step: 30 });
-      await sendSMS(phone,
-        `Which subjects do you want to study? Choose from:\n\n📐 Maths\n🔬 Biology\n⚗️ Chemistry\n🧪 Physics\n📖 English\n📚 History\n🌍 Geography\n\nType the subjects you want separated by commas!\nExample: Maths, Biology, Chemistry`
-      );
+      await sendSMS(phone, subjectsMenuMessage(student));
       return;
     }
 
@@ -523,16 +527,28 @@ async function handleChallenge(student, phone, channel) {
 }
 
 // ─── Subject Update Handler ───────────────────────────────────────────────────
-const VALID_SUBJECTS = ['Maths', 'Biology', 'Chemistry', 'Physics', 'English', 'History', 'Geography'];
-
 async function handleSubjectUpdate(student, rawText, phone, channel) {
   const send = channel === 'SMS' ? sendSMS : sendWhatsApp;
-  const normalized = rawText.toLowerCase();
-  const matched = VALID_SUBJECTS.filter(s => normalized.includes(s.toLowerCase()));
 
+  if (isALevelForm(student.Form_level)) {
+    const combo = parseALevelCombination(rawText);
+    if (!combo) {
+      await send(phone,
+        `I couldn't match that combination! 🤔 Try again using a code from this list:\n\n${A_LEVEL_MENU}`
+      );
+      return;
+    }
+    await updateStudent(student.id, { Subjects: combo.subjects.join(', '), Enrollment_Step: 5 });
+    await send(phone,
+      `Perfect! 🔥 Your combination is updated to ${combo.code} (${combo.subjects.join(', ')}). New questions start tomorrow!`
+    );
+    return;
+  }
+
+  const matched = parseOLevelSubjects(rawText);
   if (!matched.length) {
     await send(phone,
-      `I couldn't match any subjects! 🤔 Try again using names from this list:\n\nMaths · Biology · Chemistry · Physics · English · History · Geography\n\nExample: Maths, Biology`
+      `I couldn't match any subjects! 🤔 Try again using names from this list:\n\n${O_LEVEL_SUBJECTS.join(' · ')}\n\nExample: Maths, Biology`
     );
     return;
   }

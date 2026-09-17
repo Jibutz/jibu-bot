@@ -2,6 +2,7 @@ const { getStudentByPhone, createStudent, updateStudent } = require('./airtable'
 const { sendWhatsApp } = require('./whatsapp');
 const { sendSMS } = require('./sms');
 const { t } = require('./lang');
+const { O_LEVEL_SUBJECTS, A_LEVEL_MENU, isALevelForm, parseOLevelSubjects, parseALevelCombination } = require('./subjects');
 
 const PRICING = {
   trial:   { name: 'Jaribio',      price: 0,     days: 3   },
@@ -11,7 +12,6 @@ const PRICING = {
   annual:  { name: 'Mwaka Pack',   price: 30000, days: 365 },
 };
 
-const SUBJECTS = ['Maths', 'Biology', 'Chemistry', 'Physics', 'English', 'Geography', 'History'];
 const VALID_FORMS = ['1', '2', '3', '4', '5', '6'];
 
 const GREETINGS = new Set([
@@ -144,27 +144,52 @@ async function enrollmentFlow(phone, message, student, channel) {
         return;
       }
       await updateStudent(student.id, { Form_level: form, Enrollment_Step: 3 });
-      await send(phone, t(student,
-        `Form ${form} — let's go! 📚\n\nWhich subjects does ${student.Student_Name} study? Pick from the list:\n\nMaths · Biology · Chemistry · Physics · English · Geography · History\n\nExample: Maths, Biology, Chemistry`,
-        `Kidato cha ${form} — sawa kabisa! 📚\n\n${student.Student_Name} anasoma masomo gani? Chagua hapa:\n\nMaths · Biology · Chemistry · Physics · English · Geography · History\n\nMfano: Maths, Biology, Chemistry`
-      ));
+      if (isALevelForm(form)) {
+        await send(phone, t(student,
+          `Form ${form} — A-Level! 📚\n\nWhich combination does ${student.Student_Name} study? Reply with the code:\n\n${A_LEVEL_MENU}\n\nExample: PCM`,
+          `Kidato cha ${form} — A-Level! 📚\n\n${student.Student_Name} anasoma mchepuo gani? Jibu kwa kificho:\n\n${A_LEVEL_MENU}\n\nMfano: PCM`
+        ));
+      } else {
+        await send(phone, t(student,
+          `Form ${form} — let's go! 📚\n\nWhich subjects does ${student.Student_Name} study? Pick from the list:\n\n${O_LEVEL_SUBJECTS.join(' · ')}\n\nExample: Maths, Biology, Chemistry`,
+          `Kidato cha ${form} — sawa kabisa! 📚\n\n${student.Student_Name} anasoma masomo gani? Chagua hapa:\n\n${O_LEVEL_SUBJECTS.join(' · ')}\n\nMfano: Maths, Biology, Chemistry`
+        ));
+      }
       break;
     }
 
     // ── Step 3: subjects ────────────────────────────────────────────────────
     case 3: {
-      const parsedSubjects = parseSubjects(msg);
-      if (!parsedSubjects.length) {
-        await send(phone, t(student,
-          `I couldn't match those subjects! 🤔 Try again using names from this list:\n\nMaths · Biology · Chemistry · Physics · English · Geography · History`,
-          `Sijapata masomo hayo! 🤔 Jaribu tena kwa majina haya:\n\nMaths · Biology · Chemistry · Physics · English · Geography · History`
-        ));
-        return;
+      let parsedSubjects;
+      let confirmLabel;
+
+      if (isALevelForm(student.Form_level)) {
+        const combo = parseALevelCombination(msg);
+        if (!combo) {
+          await send(phone, t(student,
+            `I couldn't match that combination! 🤔 Try again using a code from this list:\n\n${A_LEVEL_MENU}`,
+            `Sijapata mchepuo huo! 🤔 Jaribu tena kwa kificho kimoja cha hapa:\n\n${A_LEVEL_MENU}`
+          ));
+          return;
+        }
+        parsedSubjects = combo.subjects;
+        confirmLabel = `${combo.code} (${combo.subjects.join(', ')})`;
+      } else {
+        parsedSubjects = parseOLevelSubjects(msg);
+        if (!parsedSubjects.length) {
+          await send(phone, t(student,
+            `I couldn't match those subjects! 🤔 Try again using names from this list:\n\n${O_LEVEL_SUBJECTS.join(' · ')}`,
+            `Sijapata masomo hayo! 🤔 Jaribu tena kwa majina haya:\n\n${O_LEVEL_SUBJECTS.join(' · ')}`
+          ));
+          return;
+        }
+        confirmLabel = parsedSubjects.join(', ');
       }
+
       await updateStudent(student.id, { Subjects: parsedSubjects.join(', '), Enrollment_Step: 4 });
       await send(phone, t(student,
-        `Poa! ✅ ${parsedSubjects.join(', ')}\n\nYou can change your subjects anytime by sending SUBJECTS.\n\nAlmost done! What's the parent's M-Pesa number for billing?\n\nExample: 0712345678`,
-        `Sawa fiti! ✅ ${parsedSubjects.join(', ')}\n\nUnaweza kubadilisha masomo yako wakati wowote kwa kutuma SUBJECTS.\n\nKaribu mwisho! Nambari ya M-Pesa ya mzazi kwa malipo:\n\nMfano: 0712345678`
+        `Poa! ✅ ${confirmLabel}\n\nYou can change your subjects anytime by sending SUBJECTS.\n\nAlmost done! What's the parent's M-Pesa number for billing?\n\nExample: 0712345678`,
+        `Sawa fiti! ✅ ${confirmLabel}\n\nUnaweza kubadilisha masomo yako wakati wowote kwa kutuma SUBJECTS.\n\nKaribu mwisho! Nambari ya M-Pesa ya mzazi kwa malipo:\n\nMfano: 0712345678`
       ));
       break;
     }
@@ -206,11 +231,6 @@ async function enrollmentFlow(phone, message, student, channel) {
 
 function capitalizeWords(str) {
   return str.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
-}
-
-function parseSubjects(input) {
-  const normalized = input.toLowerCase();
-  return SUBJECTS.filter(s => normalized.includes(s.toLowerCase()));
 }
 
 function formatTanzanianPhone(phone) {
