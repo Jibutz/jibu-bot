@@ -11,7 +11,7 @@ const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-const { airtable, getStudentByPhone, createStudent, updateStudent, getAllActiveStudents } = require('./airtable');
+const { airtable, getStudentByPhone, createStudent, updateStudent, getAllActiveStudents, getRandomQuestion } = require('./airtable');
 const { sendWhatsApp, validateWhatsAppToken } = require('./whatsapp');
 const { initToken, checkAndRefreshToken } = require('./tokenManager');
 const { sendSMS } = require('./sms');
@@ -151,8 +151,8 @@ app.post('/webhook/whatsapp', async (req, res) => {
         continue;
       }
 
-      // 4. A/B/C/D answer
-      if (['A', 'B', 'C', 'D'].includes(msg)) {
+      // 4. A/B/C/D/E answer (E only applies to DB-sourced 5-option questions)
+      if (['A', 'B', 'C', 'D', 'E'].includes(msg)) {
         await processAnswer(student, msg, phone, 'whatsapp');
         continue;
       }
@@ -259,8 +259,8 @@ app.post('/webhook/sms', async (req, res) => {
       return;
     }
 
-    // 4. A/B/C/D answer
-    if (['A', 'B', 'C', 'D'].includes(msg)) {
+    // 4. A/B/C/D/E answer (E only applies to DB-sourced 5-option questions)
+    if (['A', 'B', 'C', 'D', 'E'].includes(msg)) {
       await processAnswer(student, msg, phone, 'sms');
       return;
     }
@@ -469,7 +469,9 @@ async function processAnswer(student, answer, phone, channel) {
     const next = remaining[0];
     const nextIdx = queue.findIndex(q => q === next) + 1;
     const total = queue.length;
-    const footer = t(student, `\n\nReply A, B, C or D!`, `\n\nJibu kwa A, B, C au D!`);
+    const footer = next.hasOptionE
+      ? t(student, `\n\nReply A, B, C, D or E!`, `\n\nJibu kwa A, B, C, D au E!`)
+      : t(student, `\n\nReply A, B, C or D!`, `\n\nJibu kwa A, B, C au D!`);
     await send(phone, `📚 ${next.subject} — Question ${nextIdx} of ${total}\n\n${next.questionBody}${footer}`);
   } else {
     await sleep(500);
@@ -624,13 +626,21 @@ async function sendDailyQuestion(student) {
       const localQuestions = [...(questionHistory[subject] || [])];
 
       for (let i = 0; i < 3; i++) {
-        const parsed = await generateQuestion(subject, formLevel, localTopics, isRevision && i === 0, localTopics, localQuestions);
+        // Revision questions combine two topics into one cross-topic AI
+        // question - the Questions table has no equivalent, so go straight
+        // to AI generation for that slot rather than pulling from the DB.
+        const wantsRevision = isRevision && i === 0;
+        let parsed = wantsRevision ? null : await getRandomQuestion(subject, formLevel, student.Student_Phone);
+        if (!parsed) {
+          parsed = await generateQuestion(subject, formLevel, localTopics, wantsRevision, localTopics, localQuestions);
+        }
         const tip = parsed.examTip ? `\n\n${parsed.examTip}` : '';
-        const questionBody = `${parsed.questionBody}\nA) ${parsed.optionA}\nB) ${parsed.optionB}\nC) ${parsed.optionC}\nD) ${parsed.optionD}${tip}`;
+        const optionE = parsed.optionE ? `\nE) ${parsed.optionE}` : '';
+        const questionBody = `${parsed.questionBody}\nA) ${parsed.optionA}\nB) ${parsed.optionB}\nC) ${parsed.optionC}\nD) ${parsed.optionD}${optionE}${tip}`;
         const answer = (parsed.answer || 'A').toUpperCase().charAt(0);
         const topic = parsed.topic || subject;
         console.log(`📚 ${subject} Q${i+1} [${topic}]: answer="${answer}", q="${parsed.questionBody?.slice(0,60)}"`);
-        queue.push({ subject, questionBody, answer, topic, done: false });
+        queue.push({ subject, questionBody, answer, topic, done: false, hasOptionE: Boolean(parsed.optionE) });
 
         if (topic && !localTopics.includes(topic)) localTopics.push(topic);
         if (parsed.questionBody) localQuestions.push(parsed.questionBody);
@@ -662,7 +672,9 @@ async function sendDailyQuestion(student) {
     const first = queue[0];
     const total = queue.length;
     const qNum = `📚 ${first.subject} — Question 1 of ${total}\n\n`;
-    const footer = t(student, `\n\nReply A, B, C or D!`, `\n\nJibu kwa A, B, C au D!`);
+    const footer = first.hasOptionE
+      ? t(student, `\n\nReply A, B, C, D or E!`, `\n\nJibu kwa A, B, C, D au E!`)
+      : t(student, `\n\nReply A, B, C or D!`, `\n\nJibu kwa A, B, C au D!`);
     await send(student.Student_Phone, header + qNum + first.questionBody + footer);
   } catch (err) {
     console.error(`Error sending question to ${student.Student_Phone}:`, err);
@@ -943,9 +955,13 @@ async function sendTeaserQuestion(student) {
       questionHistory = lastQ.questionHistory || {};
     } catch { /* first-time student, start fresh */ }
 
-    const parsed = await generateQuestion(subject, formLevel, topicHistory[subject] || [], false, [], questionHistory[subject] || []);
+    let parsed = await getRandomQuestion(subject, formLevel, student.Student_Phone);
+    if (!parsed) {
+      parsed = await generateQuestion(subject, formLevel, topicHistory[subject] || [], false, [], questionHistory[subject] || []);
+    }
     const tip = parsed.examTip ? `\n\n${parsed.examTip}` : '';
-    const questionBody = `${parsed.questionBody}\nA) ${parsed.optionA}\nB) ${parsed.optionB}\nC) ${parsed.optionC}\nD) ${parsed.optionD}${tip}`;
+    const optionE = parsed.optionE ? `\nE) ${parsed.optionE}` : '';
+    const questionBody = `${parsed.questionBody}\nA) ${parsed.optionA}\nB) ${parsed.optionB}\nC) ${parsed.optionC}\nD) ${parsed.optionD}${optionE}${tip}`;
     const answer = (parsed.answer || 'A').toUpperCase().charAt(0);
 
     await updateStudent(student.id, {
@@ -954,7 +970,8 @@ async function sendTeaserQuestion(student) {
 
     const send = student.Channel === 'SMS' ? sendSMS : sendWhatsApp;
     const upgradeMsg = `\n\n🔓 Unataka maswali yote 3 leo?\nUpgrade to Wiki Pass — just 1,500 TZS for 7 days!\nReply PAY to see all plans. 💪`;
-    await send(student.Student_Phone, `📚 ${subject} — Today's Free Question\n\n${questionBody}\n\nReply A, B, C or D!${upgradeMsg}`);
+    const replyPrompt = parsed.optionE ? 'Reply A, B, C, D or E!' : 'Reply A, B, C or D!';
+    await send(student.Student_Phone, `📚 ${subject} — Today's Free Question\n\n${questionBody}\n\n${replyPrompt}${upgradeMsg}`);
   } catch (err) {
     console.error(`Teaser question error for ${student.Student_Phone}:`, err);
   }
