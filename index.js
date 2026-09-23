@@ -701,6 +701,11 @@ async function sendACSEEDailyQuestion(student) {
 
     if (!queue.length) {
       console.log(`sendACSEEDailyQuestion: nothing to send for phone=${student.Student_Phone} (subjects=${subjects.join(', ')})`);
+      const send = student.Channel === 'SMS' ? sendSMS : sendWhatsApp;
+      await send(student.Student_Phone, t(student,
+        `📚 No ACSEE questions are available yet for your subjects (${subjects.join(', ')}) — we're still adding content. Check back soon! 🙏`,
+        `📚 Bado hakuna maswali ya ACSEE kwa masomo yako (${subjects.join(', ')}) — tunaendelea kuongeza maudhui. Rudi baadaye! 🙏`
+      ));
       return;
     }
 
@@ -739,6 +744,11 @@ async function sendACSEETeaserQuestion(student) {
     }
     if (!parsed) {
       console.log(`sendACSEETeaserQuestion: no ACSEE question available for phone=${student.Student_Phone} (subjects=${subjects.join(', ')})`);
+      const send = student.Channel === 'SMS' ? sendSMS : sendWhatsApp;
+      await send(student.Student_Phone, t(student,
+        `📚 No ACSEE questions are available yet for your subjects (${subjects.join(', ')}) — we're still adding content. Check back soon! 🙏`,
+        `📚 Bado hakuna maswali ya ACSEE kwa masomo yako (${subjects.join(', ')}) — tunaendelea kuongeza maudhui. Rudi baadaye! 🙏`
+      ));
       return;
     }
 
