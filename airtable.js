@@ -2,6 +2,7 @@ const Airtable = require('airtable');
 
 const TABLE = 'Students';
 const QUESTIONS_TABLE = 'Questions';
+const ACSEE_QUESTIONS_TABLE = 'ACSEE_Questions';
 
 // Lazily construct the Airtable base on first use instead of at require-time,
 // so the process can boot (e.g. to serve the health-check route) even when
@@ -225,9 +226,90 @@ async function getRandomQuestion(subject, formLevel, studentPhone) {
   };
 }
 
+/**
+ * Fetch every ACSEE_Questions record for a subject.
+ *
+ * Unlike getQuestionsForSubject (CSEE), this does NOT filter by Form_Level.
+ * ACSEE past papers don't distinguish Form 5 vs Form 6 content - both years
+ * of A-Level study toward the same national exam - so Form 5 and Form 6
+ * students share one question pool per subject.
+ */
+async function getACSEEQuestionsForSubject(subject) {
+  try {
+    const records = await base(ACSEE_QUESTIONS_TABLE).select({
+      filterByFormula: `{Subject} = "${subject}"`,
+    }).all();
+    return records.map(r => ({ id: r.id, ...r.fields }));
+  } catch (err) {
+    logAirtableError(`getACSEEQuestionsForSubject(subject=${subject})`, err);
+    return [];
+  }
+}
+
+/**
+ * Pull a random not-yet-seen ACSEE (Form 5/6) question for a student from
+ * ACSEE_Questions.
+ *
+ * Reuses the same Students.Seen_Question_IDs JSON blob that getRandomQuestion
+ * uses (keyed by subject) rather than a separate field - safe to share
+ * because Airtable record IDs are globally unique across the whole base,
+ * and a student is never simultaneously O-Level and A-Level.
+ *
+ * Returns { questionBody, answerSummary, explanation, topic, questionId } -
+ * deliberately NOT the MCQ shape getRandomQuestion returns (no option
+ * letters, no answer field), since ACSEE questions are revealed as a
+ * free-text model answer, never graded against a reply.
+ *
+ * Returns null when there's no student record, nothing in the table for
+ * this subject yet, or the student has already seen everything available.
+ */
+async function getRandomACSEEQuestion(subject, studentPhone) {
+  const student = await getStudentByPhone(studentPhone);
+  if (!student) {
+    console.error(`getRandomACSEEQuestion: no student found for phone=${studentPhone}`);
+    return null;
+  }
+
+  let seen = {};
+  try {
+    seen = JSON.parse(student.Seen_Question_IDs || '{}');
+  } catch {
+    seen = {};
+  }
+  const seenIds = seen[subject] || [];
+
+  const questions = await getACSEEQuestionsForSubject(subject);
+  const available = questions.filter(q => !seenIds.includes(q.id));
+
+  if (!available.length) {
+    console.log(`getRandomACSEEQuestion: exhausted (${questions.length} total, ${seenIds.length} seen) for subject=${subject} phone=${studentPhone}`);
+    return null;
+  }
+
+  const pick = available[Math.floor(Math.random() * available.length)];
+
+  try {
+    seen[subject] = [...seenIds, pick.id];
+    await updateStudent(student.id, { Seen_Question_IDs: JSON.stringify(seen) });
+  } catch (err) {
+    logAirtableError(`getRandomACSEEQuestion updateStudent(seen tracking, phone=${studentPhone})`, err);
+    // Still return the question - failing to record it as seen just risks a
+    // future repeat, which is far less bad than silently dropping the question.
+  }
+
+  return {
+    questionBody: pick.Question || '',
+    answerSummary: pick.Answer_Summary || '',
+    explanation: pick.Explanation || '',
+    topic: pick.Topic || subject,
+    questionId: pick.id,
+  };
+}
+
 module.exports = {
   base,
   TABLE,
+  ACSEE_QUESTIONS_TABLE,
   getStudentByPhone,
   createStudent,
   updateStudent,
@@ -235,4 +317,6 @@ module.exports = {
   getStudentByIndexNumber,
   getQuestionsForSubject,
   getRandomQuestion,
+  getACSEEQuestionsForSubject,
+  getRandomACSEEQuestion,
 };

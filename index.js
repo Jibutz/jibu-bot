@@ -11,7 +11,7 @@ const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-const { airtable, getStudentByPhone, createStudent, updateStudent, getAllActiveStudents, getRandomQuestion } = require('./airtable');
+const { airtable, getStudentByPhone, createStudent, updateStudent, getAllActiveStudents, getRandomQuestion, getRandomACSEEQuestion } = require('./airtable');
 const { sendWhatsApp, validateWhatsAppToken } = require('./whatsapp');
 const { initToken, checkAndRefreshToken } = require('./tokenManager');
 const { sendSMS } = require('./sms');
@@ -117,7 +117,7 @@ app.post('/webhook/whatsapp', async (req, res) => {
       }
 
       if (msg === 'TEST' || msg === 'TESTQUESTION') {
-        await sendDailyQuestion(student);
+        await dispatchDailyQuestion(student);
         continue;
       }
 
@@ -145,19 +145,27 @@ app.post('/webhook/whatsapp', async (req, res) => {
         continue;
       }
 
-      // 3. Saturday quiz answer format (e.g. "1A 2B 3C 4D 5A")
+      // 3. ACSEE (Form 5/6) reveal - any free text closes out the pending
+      // question. Must come before the Saturday/A-E checks below, since
+      // those are MCQ-shaped and don't apply to the free-text ACSEE flow.
+      if (isALevelForm(student.Form_level) && hasPendingACSEEQuestion(student)) {
+        await processACSEEReveal(student, phone, 'whatsapp');
+        continue;
+      }
+
+      // 4. Saturday quiz answer format (e.g. "1A 2B 3C 4D 5A")
       if (isSaturdayAnswerFormat(msg) && student.Saturday_Answers) {
         await handleSaturdayAnswers(student, msg, phone, 'whatsapp');
         continue;
       }
 
-      // 4. A/B/C/D/E answer (E only applies to DB-sourced 5-option questions)
+      // 5. A/B/C/D/E answer (E only applies to DB-sourced 5-option questions)
       if (['A', 'B', 'C', 'D', 'E'].includes(msg)) {
         await processAnswer(student, msg, phone, 'whatsapp');
         continue;
       }
 
-      // 5. Pending step handlers
+      // 6. Pending step handlers
       if (step === 40) {
         await handlePlanSelection(student, msg, phone, 'whatsapp');
         continue;
@@ -237,7 +245,7 @@ app.post('/webhook/sms', async (req, res) => {
     }
 
     if (msg === 'TEST' || msg === 'TESTQUESTION') {
-      await sendDailyQuestion(student);
+      await dispatchDailyQuestion(student);
       return;
     }
 
@@ -253,19 +261,27 @@ app.post('/webhook/sms', async (req, res) => {
       return;
     }
 
-    // 3. Saturday quiz answer format (e.g. "1A 2B 3C 4D 5A")
+    // 3. ACSEE (Form 5/6) reveal - any free text closes out the pending
+    // question. Must come before the Saturday/A-E checks below, since
+    // those are MCQ-shaped and don't apply to the free-text ACSEE flow.
+    if (isALevelForm(student.Form_level) && hasPendingACSEEQuestion(student)) {
+      await processACSEEReveal(student, phone, 'sms');
+      return;
+    }
+
+    // 4. Saturday quiz answer format (e.g. "1A 2B 3C 4D 5A")
     if (isSaturdayAnswerFormat(msg) && student.Saturday_Answers) {
       await handleSaturdayAnswers(student, msg, phone, 'sms');
       return;
     }
 
-    // 4. A/B/C/D/E answer (E only applies to DB-sourced 5-option questions)
+    // 5. A/B/C/D/E answer (E only applies to DB-sourced 5-option questions)
     if (['A', 'B', 'C', 'D', 'E'].includes(msg)) {
       await processAnswer(student, msg, phone, 'sms');
       return;
     }
 
-    // 5. Pending step handlers
+    // 6. Pending step handlers
     if (step === 40) {
       await handlePlanSelection(student, msg, phone, 'sms');
       return;
@@ -579,14 +595,14 @@ cron.schedule('0 13 * * *', async () => {
   try {
     const students = await getAllActiveStudents();
     for (const student of students) {
-      await sendDailyQuestion(student);
+      await dispatchDailyQuestion(student);
       await sleep(500);
     }
     // Send 1 teaser question to trial-expired (Paused) students
     const pausedStudents = await getAllActiveStudents(['Paused']);
     for (const student of pausedStudents) {
       if (student.Trial_Status === 'Trial_Expired') {
-        await sendTeaserQuestion(student);
+        await dispatchTeaserQuestion(student);
         await sleep(500);
       }
     }
@@ -596,6 +612,235 @@ cron.schedule('0 13 * * *', async () => {
 }, { timezone: 'UTC' });
 
 const MAX_RECENT_QUESTIONS_PER_SUBJECT = 30;
+
+// ─── ACSEE (Form 5/6) Daily Question Flow ────────────────────────────────────
+// Form 5/6 students get free-text reveal-style questions instead of MCQ: the
+// real exam question is sent, and ANY reply (no format required) reveals
+// the model answer as lettered bullets. There is no AI grading or
+// correct/incorrect comparison - the daily streak increments for
+// participating (typing something), not for correctness, since there is
+// nothing to grade in a free-text reveal.
+
+/**
+ * Route a student to the MCQ daily-question flow (sendDailyQuestion) or the
+ * ACSEE free-text reveal flow (sendACSEEDailyQuestion) based on Form_level.
+ * Replaces direct sendDailyQuestion(student) calls at every call site so
+ * A-Level students never enter the MCQ flow. sendDailyQuestion itself is
+ * unchanged.
+ */
+async function dispatchDailyQuestion(student) {
+  return isALevelForm(student.Form_level)
+    ? sendACSEEDailyQuestion(student)
+    : sendDailyQuestion(student);
+}
+
+/**
+ * Same routing as dispatchDailyQuestion, for the trial-expired teaser flow.
+ */
+async function dispatchTeaserQuestion(student) {
+  return isALevelForm(student.Form_level)
+    ? sendACSEETeaserQuestion(student)
+    : sendTeaserQuestion(student);
+}
+
+/**
+ * True if this student has at least one ACSEE question queued today that
+ * hasn't been revealed yet. Used by the inbound webhooks to decide whether
+ * an incoming free-text message should be treated as a reveal trigger.
+ */
+function hasPendingACSEEQuestion(student) {
+  try {
+    const queue = JSON.parse(student.ACSEE_Todays_Queue || '[]');
+    return Array.isArray(queue) && queue.some(q => !q.done);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Answer_Summary is stored in Airtable as one inline string
+ * ("a) ..., b) ..., c) ...", per compile_acsee_biology.py's lettered()
+ * helper). Split it back into one bullet per line for readability on
+ * WhatsApp/SMS.
+ */
+function formatAnswerBullets(answerSummary) {
+  return (answerSummary || '')
+    .split(/,\s(?=[a-z]\))/)
+    .map(line => line.trim())
+    .filter(Boolean)
+    .join('\n');
+}
+
+async function sendACSEEDailyQuestion(student) {
+  try {
+    const subjects = (student.Subjects || '').split(',').map(s => s.trim()).filter(Boolean);
+    if (!subjects.length) return;
+
+    const queue = [];
+    for (const subject of subjects) {
+      const parsed = await getRandomACSEEQuestion(subject, student.Student_Phone);
+      if (!parsed) {
+        // No ACSEE content for this subject yet (only Biology is imported
+        // so far) or the student has seen everything available - skip it
+        // rather than falling back to AI generation, which hasn't been
+        // built for the free-text ACSEE format.
+        console.log(`sendACSEEDailyQuestion: no ACSEE question available for subject=${subject} phone=${student.Student_Phone}`);
+        continue;
+      }
+      queue.push({
+        subject,
+        topic: parsed.topic,
+        questionBody: parsed.questionBody,
+        answerSummary: parsed.answerSummary,
+        explanation: parsed.explanation,
+        questionId: parsed.questionId,
+        done: false,
+      });
+      await sleep(200);
+    }
+
+    if (!queue.length) {
+      console.log(`sendACSEEDailyQuestion: nothing to send for phone=${student.Student_Phone} (subjects=${subjects.join(', ')})`);
+      return;
+    }
+
+    await updateStudent(student.id, { ACSEE_Todays_Queue: JSON.stringify(queue) });
+
+    const streak = student.Current_Streak || 0;
+    const rank = student.Rank_Title || getRankTitle(streak);
+    const send = student.Channel === 'SMS' ? sendSMS : sendWhatsApp;
+
+    const header = t(student,
+      `🔥 Day ${streak} | ${rank} | ${student.Student_Name}\n\n`,
+      `🔥 Siku ${streak} | ${rank} | ${student.Student_Name}\n\n`
+    );
+    const first = queue[0];
+    const qNum = `📚 ${first.subject} — Question 1 of ${queue.length}\n\n`;
+    const prompt = t(student,
+      `\n\n✍️ Type your own answer — any format is fine. When you're ready, I'll show you the model answer!`,
+      `\n\n✍️ Andika jibu lako mwenyewe — muundo wowote ni sawa. Ukiwa tayari, nitakuonyesha jibu sahihi!`
+    );
+    await send(student.Student_Phone, header + qNum + first.questionBody + prompt);
+  } catch (err) {
+    console.error(`Error sending ACSEE question to ${student.Student_Phone}:`, err);
+  }
+}
+
+async function sendACSEETeaserQuestion(student) {
+  try {
+    const subjects = (student.Subjects || '').split(',').map(s => s.trim()).filter(Boolean);
+    if (!subjects.length) return;
+
+    let parsed = null;
+    let subject = null;
+    for (const s of subjects) {
+      parsed = await getRandomACSEEQuestion(s, student.Student_Phone);
+      if (parsed) { subject = s; break; }
+    }
+    if (!parsed) {
+      console.log(`sendACSEETeaserQuestion: no ACSEE question available for phone=${student.Student_Phone} (subjects=${subjects.join(', ')})`);
+      return;
+    }
+
+    await updateStudent(student.id, {
+      ACSEE_Todays_Queue: JSON.stringify([{
+        subject,
+        topic: parsed.topic,
+        questionBody: parsed.questionBody,
+        answerSummary: parsed.answerSummary,
+        explanation: parsed.explanation,
+        questionId: parsed.questionId,
+        done: false,
+      }]),
+    });
+
+    const send = student.Channel === 'SMS' ? sendSMS : sendWhatsApp;
+    const upgradeMsg = `\n\n🔓 Unataka maswali yote leo?\nUpgrade to Wiki Pass — just 1,500 TZS for 7 days!\nReply PAY to see all plans. 💪`;
+    const prompt = `✍️ Type your own answer — any format is fine. When you're ready, I'll show you the model answer!`;
+    await send(student.Student_Phone, `📚 ${subject} — Today's Free Question\n\n${parsed.questionBody}\n\n${prompt}${upgradeMsg}`);
+  } catch (err) {
+    console.error(`ACSEE teaser question error for ${student.Student_Phone}:`, err);
+  }
+}
+
+/**
+ * Reveal the model answer for the student's current pending ACSEE question,
+ * triggered by any inbound free-text reply (see hasPendingACSEEQuestion at
+ * the webhook level). No grading, no correct/incorrect - just shows the
+ * lettered model answer. The daily streak increments for participating,
+ * mirroring processAnswer's once-per-day streak logic but without any
+ * correctness check.
+ */
+async function processACSEEReveal(student, phone, channel) {
+  const send = channel === 'sms' ? sendSMS : sendWhatsApp;
+
+  let queue;
+  try {
+    queue = JSON.parse(student.ACSEE_Todays_Queue || '[]');
+    if (!Array.isArray(queue)) throw new Error('not array');
+  } catch {
+    queue = [];
+  }
+
+  const idx = queue.findIndex(q => !q.done);
+  if (idx === -1) {
+    await send(phone, t(student,
+      `You've already seen all today's questions! 🎉 See you tomorrow at 4 PM.`,
+      `Umekwisha ona maswali yote leo! 🎉 Tutaonana kesho saa 10 jioni.`
+    ));
+    return;
+  }
+
+  const current = queue[idx];
+  queue[idx].done = true;
+  const remaining = queue.filter(q => !q.done);
+
+  const today = new Date().toISOString().split('T')[0];
+  const alreadyAnsweredToday = (student.Last_Answer_Date === today);
+  let newStreak = parseInt(student.Current_Streak) || 0;
+  if (!alreadyAnsweredToday) newStreak += 1;
+  const longestStreak = Math.max(parseInt(student.Longest_Streak) || 0, newStreak);
+  const newRank = getRankTitle(newStreak);
+
+  await updateStudent(student.id, {
+    ACSEE_Todays_Queue: JSON.stringify(queue),
+    Current_Streak: newStreak,
+    Last_Answer_Date: today,
+    Longest_Streak: longestStreak,
+    Rank_Title: newRank,
+  });
+
+  const bullets = formatAnswerBullets(current.answerSummary);
+  const explanationLine = current.explanation ? `\n\n💡 Why: ${current.explanation}` : '';
+  const revealMsg = t(student,
+    `📖 Model Answer:\n\n${bullets}${explanationLine}\n\nNice work thinking it through! 🌟`,
+    `📖 Jibu Sahihi:\n\n${bullets}${explanationLine}\n\nKazi nzuri kufikiria! 🌟`
+  );
+  await send(phone, revealMsg);
+
+  const milestone = checkMilestone(newStreak);
+  if (milestone) {
+    await send(phone, getMilestoneMessage(student.Student_Name, newStreak, newRank));
+  }
+
+  if (remaining.length) {
+    await sleep(1000);
+    const next = remaining[0];
+    const nextIdx = queue.findIndex(q => q === next) + 1;
+    const total = queue.length;
+    const prompt = t(student,
+      `\n\n✍️ Type your own answer — any format is fine. When you're ready, I'll show you the model answer!`,
+      `\n\n✍️ Andika jibu lako mwenyewe — muundo wowote ni sawa. Ukiwa tayari, nitakuonyesha jibu sahihi!`
+    );
+    await send(phone, `📚 ${next.subject} — Question ${nextIdx} of ${total}\n\n${next.questionBody}${prompt}`);
+  } else {
+    await sleep(500);
+    await send(phone, t(student,
+      `🏁 Done for today, ${student.Student_Name}! You went through all ${queue.length} questions.\n\n🔥 Streak: ${newStreak} days\n\nSee you tomorrow at 4 PM! 🌟`,
+      `🏁 Umekwisha leo, ${student.Student_Name}! Umepitia maswali yote ${queue.length}.\n\n🔥 Siku: ${newStreak}\n\nTutaonana kesho saa 10 jioni! 🌟`
+    ));
+  }
+}
 
 async function sendDailyQuestion(student) {
   try {
