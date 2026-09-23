@@ -8,3 +8,10 @@ yarn-error.log*
 .DS_Store
 coverage/
 dist/
+__pycache__/
+.claude/
+
+# NECTA past-paper downloads and intermediate OCR dumps (large, regenerable via the scrapers)
+necta-papers/**/*.pdf
+necta-papers-acsee/**/*.pdf
+raw_text/
