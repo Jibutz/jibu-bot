@@ -1,7 +1,7 @@
 const Airtable = require('airtable');
 
 const TABLE = 'Students';
-const QUESTIONS_TABLE = 'Questions';
+const QUESTIONS_TABLE = 'CSEE_Questions';
 const ACSEE_QUESTIONS_TABLE = 'ACSEE_Questions';
 
 // Lazily construct the Airtable base on first use instead of at require-time,
@@ -145,7 +145,7 @@ async function getStudentByIndexNumber(indexNumber) {
 
 /**
  * Fetch every Question record for a subject + form level.
- * Form_Level in the Questions table is stored as "Form 4", "Form 3", etc.,
+ * Form_Level in the CSEE_Questions table is stored as "Form 4", "Form 3", etc.,
  * while callers pass the bare Students.Form_level value ("4") - normalize here.
  */
 async function getQuestionsForSubject(subject, formLevel) {
@@ -164,7 +164,7 @@ async function getQuestionsForSubject(subject, formLevel) {
 }
 
 /**
- * Pull a random not-yet-seen question for a student from the Questions
+ * Pull a random not-yet-seen question for a student from the CSEE_Questions
  * table, tracking what they've seen per subject in Students.Seen_Question_IDs
  * (a JSON blob: { "Biology": ["recXXX", ...], "Chemistry": [...] }).
  *
@@ -172,8 +172,8 @@ async function getQuestionsForSubject(subject, formLevel) {
  * answer, topic, examTip) plus optionE, explanation, and questionId, so a
  * caller can do `parsed = await getRandomQuestion(...) || await generateQuestion(...)`.
  *
- * Returns null when the student has no student record, the Questions table
- * has nothing for this subject/form, or every matching question has already
+ * Returns null when the student has no student record, the CSEE_Questions
+ * table has nothing for this subject/form, or every matching question has already
  * been seen - in all of those cases the caller should fall back to AI
  * generation.
  */

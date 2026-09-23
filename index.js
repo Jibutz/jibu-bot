@@ -872,8 +872,8 @@ async function sendDailyQuestion(student) {
 
       for (let i = 0; i < 3; i++) {
         // Revision questions combine two topics into one cross-topic AI
-        // question - the Questions table has no equivalent, so go straight
-        // to AI generation for that slot rather than pulling from the DB.
+        // question - the CSEE_Questions table has no equivalent, so go
+        // straight to AI generation for that slot rather than pulling from the DB.
         const wantsRevision = isRevision && i === 0;
         let parsed = wantsRevision ? null : await getRandomQuestion(subject, formLevel, student.Student_Phone);
         if (!parsed) {
