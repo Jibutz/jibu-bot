@@ -226,6 +226,9 @@ async function getRandomQuestion(subject, formLevel, studentPhone) {
   };
 }
 
+const ACSEE_CACHE_TTL_MS = 10 * 60 * 1000;
+let acseeCache = { rows: null, fetchedAt: 0 };
+
 /**
  * Fetch every ACSEE_Questions record for a subject.
  *
@@ -233,13 +236,31 @@ async function getRandomQuestion(subject, formLevel, studentPhone) {
  * ACSEE past papers don't distinguish Form 5 vs Form 6 content - both years
  * of A-Level study toward the same national exam - so Form 5 and Form 6
  * students share one question pool per subject.
+ *
+ * The whole table is fetched once and cached in memory for 10 minutes; the
+ * subject match is done in JS (trimmed, case-insensitive) rather than via
+ * filterByFormula. Newly imported rows can take up to 10 minutes to show up.
  */
 async function getACSEEQuestionsForSubject(subject) {
   try {
-    const records = await base(ACSEE_QUESTIONS_TABLE).select({
-      filterByFormula: `{Subject} = "${subject}"`,
-    }).all();
-    return records.map(r => ({ id: r.id, ...r.fields }));
+    const now = Date.now();
+    let fromCache = true;
+    if (!acseeCache.rows || now - acseeCache.fetchedAt > ACSEE_CACHE_TTL_MS) {
+      // No filterByFormula: fetch the whole table and filter in JS below, so
+      // matching is case/whitespace-insensitive and independent of Airtable's
+      // formula parser. Only cache on success - a failed fetch must not
+      // poison the cache with an empty result for 10 minutes.
+      const records = await base(ACSEE_QUESTIONS_TABLE).select().all();
+      acseeCache = { rows: records.map(r => ({ id: r.id, ...r.fields })), fetchedAt: now };
+      fromCache = false;
+    }
+
+    const wanted = String(subject || '').trim().toLowerCase();
+    const matched = acseeCache.rows.filter(
+      r => String(r.Subject || '').trim().toLowerCase() === wanted
+    );
+    console.log(`getACSEEQuestionsForSubject: ${acseeCache.rows.length} total rows (${fromCache ? 'cached' : 'fetched'}), ${matched.length} matched subject="${subject}"`);
+    return matched;
   } catch (err) {
     logAirtableError(`getACSEEQuestionsForSubject(subject=${subject})`, err);
     return [];
