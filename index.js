@@ -419,15 +419,10 @@ async function processAnswer(student, answer, phone, channel) {
   // Update topic history and question counts carried inside Last_Question
   // (questionHistory — the exact-wording anti-repeat list — is written by
   // sendDailyQuestion and just needs to be passed through unchanged here)
-  let topicHistory = {};
-  let questionCounts = {};
-  let questionHistory = {};
-  try {
-    const prevLQ = JSON.parse(student.Last_Question || '{}');
-    topicHistory = prevLQ.topicHistory || {};
-    questionCounts = prevLQ.questionCounts || {};
-    questionHistory = prevLQ.questionHistory || {};
-  } catch { /* ignore */ }
+  const prevLQ = parseLastQuestion(student);
+  const topicHistory = prevLQ.topicHistory || {};
+  const questionCounts = prevLQ.questionCounts || {};
+  const questionHistory = prevLQ.questionHistory || {};
 
   const answeredTopic = current.topic || current.subject;
   if (!topicHistory[current.subject]) topicHistory[current.subject] = [];
@@ -440,6 +435,15 @@ async function processAnswer(student, answer, phone, channel) {
   }
   questionCounts[current.subject] = (questionCounts[current.subject] || 0) + 1;
 
+  // Last_Question: if another question is about to be sent, it becomes the
+  // current one (with the answered question kept as `previous`); otherwise
+  // the answered question stays current, flagged answered.
+  const answered = answeredSnapshot(student, { ...current, topic: answeredTopic });
+  const historyFields = { topicHistory, questionCounts, questionHistory };
+  const lastQuestion = remaining.length
+    ? buildLastQuestion(student, historyFields, remaining[0], { previous: answered })
+    : JSON.stringify({ ...historyFields, ...answered });
+
   await updateStudent(student.id, {
     Current_Streak: newStreak,
     Total_Points: newPoints,
@@ -449,16 +453,7 @@ async function processAnswer(student, answer, phone, channel) {
     Weak_Topics: weakTopics,
     Strong_Topics: strongTopics,
     Todays_Correct_Answer: remaining.length ? JSON.stringify(queue) : '',
-    Last_Question: JSON.stringify({
-      questionBody: current.questionBody,
-      answer: current.answer,
-      subject: current.subject,
-      formLevel: student.Form_level || '4',
-      topic: answeredTopic,
-      topicHistory,
-      questionCounts,
-      questionHistory,
-    }),
+    Last_Question: lastQuestion,
   });
 
   // Send feedback
@@ -520,6 +515,61 @@ async function handleMyStats(student, phone, channel) {
   );
 }
 
+// ─── Last_Question Tracking ──────────────────────────────────────────────────
+/**
+ * Build the Last_Question JSON for a question that is about to be sent.
+ * Last_Question always describes the question the student is currently
+ * looking at (answered: false). The anti-repeat history fields
+ * (topicHistory/questionCounts/questionHistory) are carried over from the
+ * previous value, never dropped. `previous` keeps the last question the
+ * student actually answered, so WRONG/EXPLAIN right after feedback still
+ * refers to that question even though the next one has already been sent.
+ */
+function buildLastQuestion(student, prevLQ, question, extra = {}) {
+  const questionText = question.questionBody || '';
+  console.log(`Saved Last_Question for ${student.Student_Phone}:`, questionText.substring(0, 60));
+  return JSON.stringify({
+    topicHistory: prevLQ.topicHistory || {},
+    questionCounts: prevLQ.questionCounts || {},
+    questionHistory: prevLQ.questionHistory || {},
+    ...extra,
+    questionBody: questionText,
+    // For ACSEE free-text questions the "answer" is the model answer summary
+    answer: question.answer || question.answerSummary || '',
+    answerSummary: question.answerSummary,
+    explanation: question.explanation,
+    questionId: question.questionId,
+    subject: question.subject,
+    topic: question.topic || question.subject,
+    formLevel: student.Form_level || '4',
+    sentAt: new Date().toISOString(),
+    answered: false,
+  });
+}
+
+function parseLastQuestion(student) {
+  try {
+    return JSON.parse(student.Last_Question || '{}') || {};
+  } catch {
+    return {};
+  }
+}
+
+/** Snapshot of an answered question, stored as Last_Question.previous. */
+function answeredSnapshot(student, question) {
+  return {
+    questionBody: question.questionBody,
+    answer: question.answer || question.answerSummary || '',
+    answerSummary: question.answerSummary,
+    explanation: question.explanation,
+    questionId: question.questionId,
+    subject: question.subject,
+    topic: question.topic || question.subject,
+    formLevel: student.Form_level || '4',
+    answered: true,
+  };
+}
+
 // ─── Challenge / Re-explanation Handler ──────────────────────────────────────
 const CHALLENGE_WORDS = ['wrong', 'disagree', 'how', 'explain', 'why', 'not right', "sure?", "really?", "i don't understand", "don't understand", "dont understand"];
 
@@ -530,16 +580,19 @@ function isChallengeMessage(raw) {
 
 async function handleChallenge(student, phone, channel) {
   const send = channel === 'SMS' ? sendSMS : sendWhatsApp;
-  const raw = student.Last_Question;
-  if (!raw) {
+  const lq = parseLastQuestion(student);
+  // If the question currently on screen hasn't been answered yet, the
+  // student is challenging the one they just got feedback on (previous).
+  // Legacy records have no `answered` flag - treat them as answered.
+  const lastQuestion = lq.answered === false ? lq.previous : lq;
+  if (!lastQuestion || !lastQuestion.questionBody) {
     await send(phone, t(student,
       `No recent question to re-explain! Answer today's question first, then ask me if you disagree. 😊`,
       `Hakuna swali la hivi karibuni! Jibu swali la leo kwanza, kisha niulize. 😊`
     ));
     return;
   }
-  let lastQuestion;
-  try { lastQuestion = JSON.parse(raw); } catch { return; }
+  console.log(`handleChallenge: re-explaining for ${phone}:`, lastQuestion.questionBody.substring(0, 60));
   const reexplanation = await generateReexplanation(lastQuestion);
   await send(phone, reexplanation);
 }
@@ -709,7 +762,10 @@ async function sendACSEEDailyQuestion(student) {
       return;
     }
 
-    await updateStudent(student.id, { ACSEE_Todays_Queue: JSON.stringify(queue) });
+    await updateStudent(student.id, {
+      ACSEE_Todays_Queue: JSON.stringify(queue),
+      Last_Question: buildLastQuestion(student, parseLastQuestion(student), queue[0]),
+    });
 
     const streak = student.Current_Streak || 0;
     const rank = student.Rank_Title || getRankTitle(streak);
@@ -752,16 +808,18 @@ async function sendACSEETeaserQuestion(student) {
       return;
     }
 
+    const teaser = {
+      subject,
+      topic: parsed.topic,
+      questionBody: parsed.questionBody,
+      answerSummary: parsed.answerSummary,
+      explanation: parsed.explanation,
+      questionId: parsed.questionId,
+      done: false,
+    };
     await updateStudent(student.id, {
-      ACSEE_Todays_Queue: JSON.stringify([{
-        subject,
-        topic: parsed.topic,
-        questionBody: parsed.questionBody,
-        answerSummary: parsed.answerSummary,
-        explanation: parsed.explanation,
-        questionId: parsed.questionId,
-        done: false,
-      }]),
+      ACSEE_Todays_Queue: JSON.stringify([teaser]),
+      Last_Question: buildLastQuestion(student, parseLastQuestion(student), teaser),
     });
 
     const send = student.Channel === 'SMS' ? sendSMS : sendWhatsApp;
@@ -801,7 +859,19 @@ async function processACSEEReveal(student, phone, channel) {
     return;
   }
 
-  const current = queue[idx];
+  // The model answer comes from Last_Question - the exact question that was
+  // last sent - as long as it matches the pending queue item. A mismatch
+  // means Last_Question is stale, so fall back to the queue item and log it.
+  const lq = parseLastQuestion(student);
+  const queued = queue[idx];
+  const lqMatches = lq.answered === false && lq.answerSummary &&
+    (lq.questionId ? lq.questionId === queued.questionId : lq.questionBody === queued.questionBody);
+  if (!lqMatches) {
+    console.warn(`processACSEEReveal: Last_Question does not match pending question for ${phone}; using queue item`);
+  }
+  const current = lqMatches ? { ...queued, ...lq } : queued;
+  console.log(`processACSEEReveal: revealing model answer for ${phone}:`, (current.questionBody || '').substring(0, 60));
+
   queue[idx].done = true;
   const remaining = queue.filter(q => !q.done);
 
@@ -812,8 +882,19 @@ async function processACSEEReveal(student, phone, channel) {
   const longestStreak = Math.max(parseInt(student.Longest_Streak) || 0, newStreak);
   const newRank = getRankTitle(newStreak);
 
+  const answered = answeredSnapshot(student, current);
+  const lastQuestion = remaining.length
+    ? buildLastQuestion(student, lq, remaining[0], { previous: answered })
+    : JSON.stringify({
+        topicHistory: lq.topicHistory || {},
+        questionCounts: lq.questionCounts || {},
+        questionHistory: lq.questionHistory || {},
+        ...answered,
+      });
+
   await updateStudent(student.id, {
     ACSEE_Todays_Queue: JSON.stringify(queue),
+    Last_Question: lastQuestion,
     Current_Streak: newStreak,
     Last_Answer_Date: today,
     Longest_Streak: longestStreak,
@@ -908,12 +989,8 @@ async function sendDailyQuestion(student) {
 
     await updateStudent(student.id, {
       Todays_Correct_Answer: JSON.stringify(queue),
-      Last_Question: JSON.stringify({
-        ...lastQuestionData,
-        topicHistory,
-        questionCounts,
-        questionHistory,
-      }),
+      // queue[0] is exactly what gets sent below
+      Last_Question: buildLastQuestion(student, { topicHistory, questionCounts, questionHistory }, queue[0]),
     });
 
     const streak = student.Current_Streak || 0;
@@ -1202,13 +1279,9 @@ async function sendTeaserQuestion(student) {
     const subject = subjects[0];
     const formLevel = student.Form_level || '4';
 
-    let topicHistory = {};
-    let questionHistory = {};
-    try {
-      const lastQ = JSON.parse(student.Last_Question || '{}');
-      topicHistory = lastQ.topicHistory || {};
-      questionHistory = lastQ.questionHistory || {};
-    } catch { /* first-time student, start fresh */ }
+    const lastQ = parseLastQuestion(student);
+    const topicHistory = lastQ.topicHistory || {};
+    const questionHistory = lastQ.questionHistory || {};
 
     let parsed = await getRandomQuestion(subject, formLevel, student.Student_Phone);
     if (!parsed) {
@@ -1218,9 +1291,11 @@ async function sendTeaserQuestion(student) {
     const optionE = parsed.optionE ? `\nE) ${parsed.optionE}` : '';
     const questionBody = `${parsed.questionBody}\nA) ${parsed.optionA}\nB) ${parsed.optionB}\nC) ${parsed.optionC}\nD) ${parsed.optionD}${optionE}${tip}`;
     const answer = (parsed.answer || 'A').toUpperCase().charAt(0);
+    const teaser = { subject, questionBody, answer, topic: parsed.topic || subject, done: false };
 
     await updateStudent(student.id, {
-      Todays_Correct_Answer: JSON.stringify([{ subject, questionBody, answer, done: false }]),
+      Todays_Correct_Answer: JSON.stringify([teaser]),
+      Last_Question: buildLastQuestion(student, lastQ, teaser),
     });
 
     const send = student.Channel === 'SMS' ? sendSMS : sendWhatsApp;
